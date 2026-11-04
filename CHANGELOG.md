@@ -1,5 +1,25 @@
 # CHANGELOG
 
+## v1.9.9 — 2026-11-04 — fix xray gagal start: log dir salah owner (User=xray)
+
+### Fixed
+- **"✗ Service xray gagal start" di setiap install baru.** Installer resmi Xray
+  (XTLS/Xray-install versi sekarang) membuat systemd unit dengan
+  `User=xray`/`Group=xray` dan `/var/log/xray` mode **700 xray:xray**. Tapi
+  `setup/xray.sh` `write_config()` melakukan `chown nobody:nogroup` ke dir dan
+  file log itu — user `xray` jadi tidak bisa buka `access.log` sama sekali, dan
+  xray mati saat start:
+  `Failed to start: main: ... app/log: failed to initialize access logger >
+  open /var/log/xray/access.log: permission denied`.
+  (Reproduksi + verifikasi pesan error dilakukan dengan xray 1.8.24 asli.)
+  Sekarang owner log dir/file diambil dari unit asli (`User=`/`Group=`), fallback
+  `nobody` untuk unit lama.
+- **`validate_config()` tidak pernah bisa gagal**: `if ! xray run -test ... | tee`
+  — status pipeline = status `tee` (selalu 0), jadi config rusak lolos validasi
+  dan baru bunuh xray di `enable_service`. Diganti cek `PIPESTATUS[0]`
+  (diverifikasi: config rusak -> exit 23 sekarang terdeteksi).
+
+
 ## v1.9.8 — 2026-11-04 — fix installer mati senyap setelah preflight (VPS baru)
 
 ### Fixed

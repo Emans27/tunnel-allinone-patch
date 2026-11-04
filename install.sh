@@ -5748,8 +5748,19 @@ CFG_EOF
   chmod 644 "$XRAY_CFG" 2>/dev/null || true
   touch "$XRAY_LOGDIR/access.log" "$XRAY_LOGDIR/error.log" 2>/dev/null || true
   chmod 644 "$XRAY_LOGDIR/"*.log 2>/dev/null || true
-  chown nobody:nogroup "$XRAY_LOGDIR" 2>/dev/null || true
-  chown nobody:nogroup "$XRAY_LOGDIR/"*.log 2>/dev/null || true
+  # Unit resmi Xray (XTLS/Xray-install) jalan sebagai User=xray/Group=xray,
+  # BUKAN nobody. Installer resmi membuat /var/log/xray mode 700 xray:xray;
+  # kalau kita chown nobody:nogroup, user xray tidak bisa buka access.log ->
+  # xray MATI saat start: "app/log: failed to initialize access logger >
+  # permission denied" (gejala: "Service xray gagal start" di installer).
+  # Ikuti user/group dari unit asli; fallback nobody untuk unit lama.
+  local _xu _xg
+  _xu=$(sed -n 's/^[[:space:]]*User=[[:space:]]*//p' /etc/systemd/system/xray.service 2>/dev/null | head -1 | tr -d ' \r')
+  [ -z "$_xu" ] && _xu=nobody
+  _xg=$(sed -n 's/^[[:space:]]*Group=[[:space:]]*//p' /etc/systemd/system/xray.service 2>/dev/null | head -1 | tr -d ' \r')
+  [ -z "$_xg" ] && _xg=$(id -gn "$_xu" 2>/dev/null || echo nogroup)
+  chown "$_xu:$_xg" "$XRAY_LOGDIR" 2>/dev/null || true
+  chown "$_xu:$_xg" "$XRAY_LOGDIR/"*.log 2>/dev/null || true
   echo -e "${GREEN}Config Xray ditulis: $XRAY_CFG (9 inbounds ws+grpc+hu)${RESET}"
 }
 
@@ -5759,8 +5770,12 @@ validate_config() {
   command -v xray >/dev/null 2>&1 && xbin="xray"
   if command -v "$xbin" >/dev/null 2>&1 || [ -x "$xbin" ]; then
     echo -e "${CYAN}Validasi xray run -test -config $XRAY_CFG...${RESET}"
-    if ! "$xbin" run -test -config "$XRAY_CFG" 2>&1 | tee -a "$LOG"; then
-      echo -e "${RED}Validasi Xray gagal${RESET}"
+    # CATATAN: JANGAN `if ! ... | tee` — status pipeline = status tee (selalu 0),
+    # jadi kegagalan xray run -test SELALU ketutup dan config rusak lolos.
+    # Cek PIPESTATUS[0] (status xray asli).
+    "$xbin" run -test -config "$XRAY_CFG" 2>&1 | tee -a "$LOG" || true
+    if [ "${PIPESTATUS[0]}" != "0" ]; then
+      echo -e "${RED}Validasi Xray gagal (exit ${PIPESTATUS[0]})${RESET}"
       jq . "$XRAY_CFG" 2>&1 | head -n 50 || cat "$XRAY_CFG" | head -n 50
       return 1
     fi
@@ -14244,6 +14259,25 @@ cat > "$ETC/CHANGELOG.md" << '__EMBED_EOF__'
   alih-alih flag `http2` pada `listen`.
 - Verifikasi live: WS `/vmess` `/vless` `/trojan` @443 = `101`; koneksi gRPC
   mendarat di `8444`; ALPN `h2`/`h2,http/1.1` -> `8444`, `http/1.1` -> `9443`.
+
+
+## v1.9.9 — 2026-11-04 — fix xray gagal start: log dir salah owner (User=xray)
+### Fixed
+- **"✗ Service xray gagal start" di setiap install baru.** Installer resmi Xray
+  (XTLS/Xray-install versi sekarang) membuat systemd unit dengan
+  `User=xray`/`Group=xray` dan `/var/log/xray` mode **700 xray:xray**. Tapi
+  `setup/xray.sh` `write_config()` melakukan `chown nobody:nogroup` ke dir dan
+  file log itu — user `xray` jadi tidak bisa buka `access.log` sama sekali, dan
+  xray mati saat start:
+  `Failed to start: main: ... app/log: failed to initialize access logger >
+  open /var/log/xray/access.log: permission denied`.
+  (Reproduksi + verifikasi pesan error dilakukan dengan xray 1.8.24 asli.)
+  Sekarang owner log dir/file diambil dari unit asli (`User=`/`Group=`), fallback
+  `nobody` untuk unit lama.
+- **`validate_config()` tidak pernah bisa gagal**: `if ! xray run -test ... | tee`
+  — status pipeline = status `tee` (selalu 0), jadi config rusak lolos validasi
+  dan baru bunuh xray di `enable_service`. Diganti cek `PIPESTATUS[0]`
+  (diverifikasi: config rusak -> exit 23 sekarang terdeteksi).
 
 
 ## v1.9.8 — 2026-11-04 — fix installer mati senyap setelah preflight (VPS baru)
