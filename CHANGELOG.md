@@ -1,5 +1,31 @@
 # CHANGELOG
 
+## v1.9.7 — 2026-11-04 — domain boleh dilewati saat install + xray watchdog
+
+### Added
+- **Domain bisa dilewati saat install**: prompt `setup/domain.sh` menerima Enter
+  kosong -> `domain.txt` diisi `-`, install lanjut dengan cert self-signed
+  (CN=IP VPS) dan nginx `server_name` pakai IP. Domain asli dipasang belakangan
+  lewat **menu -> 6 FEATURES -> 9 Change Domain VPS** (`features/domain.sh`:
+  issue cert LE domain baru, rollback otomatis kalau cert/nginx gagal).
+- **Xray watchdog** (`setup/xray-guard.sh` + `mytunnel-xray-guard.timer`, cek
+  tiap 60 detik): bila xray tidak aktif, config diuji dengan `xray run -test`;
+  kalau rusak, backup valid terbaru di-restore (config rusak disimpan sebagai
+  `.broken-*`) lalu xray di-restart. Semua tindakan dicatat di
+  `/var/log/mytunnel.log` dengan prefix `xray-guard:`. Terpasang otomatis saat
+  install/reinstall (production only).
+
+### Fixed
+- **cert.sh `_log` tidak terdefinisi** -> `set -e` mematikan script (exit 127)
+  tepat di path fallback self-signed. Sekarang `_log` punya fallback lokal.
+- **cert.sh fallback ACME gagal pakai `$CERT_CRT`/`$CERT_KEY` yang tidak pernah
+  di-set** (fungsi hanya mendefinisikan `cert_crt`/`cert_key`), sehingga
+  `openssl -keyout ""` gagal -> `die "Self-signed ikut gagal dipasang"` ->
+  install mati di tahap [7/13] setiap kali Let's Encrypt gagal (rate limit 429,
+  DNS belum propagasi). Variabel diperbaiki ke `cert_crt`/`cert_key`.
+- **acme.sh email `admin@-`** saat domain belum diset -> diganti `example.com`.
+
+
 ## unreleased — preflight minim-error + verify.sh (gRPC 8444 sudah di rilis ini)
 
 ### Added

@@ -4902,10 +4902,19 @@ main() {
 
   # interactive
   while true; do
-    echo -ne "${CYAN}Masukkan domain (contoh: sg1.example.com): ${RESET}"
+    echo -ne "${CYAN}Masukkan domain (contoh: sg1.example.com) [Enter = lewati]: ${RESET}"
     read -r domain || { echo -e "${RED}Batal${RESET}"; return 1; }
     domain=$(echo "$domain" | tr -d ' \n' | tr '[:upper:]' '[:lower:]')
-    [ -z "$domain" ] && { echo -e "${RED}Domain tidak boleh kosong${RESET}"; continue; }
+    if [ -z "$domain" ]; then
+      # SKIP: domain boleh dilewati. Install lanjut dengan self-signed + nginx
+      # pakai IP; domain asli di-set belakangan lewat menu 6 -> 9 Change Domain.
+      mkdir -p "$(dirname "$DOMAIN_FILE")"
+      echo "-" > "$DOMAIN_FILE"
+      chmod 644 "$DOMAIN_FILE" 2>/dev/null || true
+      echo -e "${YELLOW}Domain dilewati. Pasang domain nanti: menu -> 6 FEATURES -> 9 Change Domain VPS${RESET}"
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] domain dilewati (skip, set nanti via menu 6)" >> "$LOG" 2>/dev/null || true
+      return 0
+    fi
     if ! validate_domain "$domain"; then
       echo -e "${RED}Format domain tidak valid: $domain${RESET}"
       continue
@@ -5177,6 +5186,10 @@ get_domain() {
   if [ -f "$DOMAIN_FILE" ]; then head -1 "$DOMAIN_FILE" 2>/dev/null | tr -d ' \n' | tr '[:upper:]' '[:lower:]'; else echo ""; fi
 }
 
+# _log tidak di-export dari installer; fallback agar set -e tidak mematikan
+# script saat _log dipanggil (path fallback ACME juga memakai _log).
+command -v _log >/dev/null 2>&1 || _log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG" 2>/dev/null || true; }
+
 # ── argumen ──────────────────────────────────────────────────
 #   --force  : paksa issue ULANG walau cert sudah ada (dipakai setelah
 #              fallback self-signed terpasang karena ACME gagal/429)
@@ -5204,10 +5217,13 @@ ACME_STUB
     return 0
   fi
   echo -e "${CYAN}Install acme.sh...${RESET}"
+  local _acme_mail
+  _acme_mail=$(get_domain)
+  { [ -z "$_acme_mail" ] || [ "$_acme_mail" = "-" ]; } && _acme_mail="example.com"
   if command -v curl >/dev/null 2>&1; then
-    curl -s https://get.acme.sh 2>/dev/null | sh -s email=admin@"$(get_domain)" >/dev/null 2>&1 || true
+    curl -s https://get.acme.sh 2>/dev/null | sh -s email=admin@"$_acme_mail" >/dev/null 2>&1 || true
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO- https://get.acme.sh 2>/dev/null | sh -s email=admin@"$(get_domain)" >/dev/null 2>&1 || true
+    wget -qO- https://get.acme.sh 2>/dev/null | sh -s email=admin@"$_acme_mail" >/dev/null 2>&1 || true
   else
     die "curl/wget tidak ada, tidak bisa install acme.sh" "Install curl dulu: apt install curl"
   fi
@@ -5230,10 +5246,29 @@ trap '_nginx_restore' EXIT
 issue_cert() {
   local domain cert_crt cert_key
   domain=$(get_domain)
-  [ -z "$domain" ] || [ "$domain" = "-" ] && die "Domain belum diisi" "Jalankan setup/domain.sh dulu atau isi $DOMAIN_FILE"
   cert_crt="$CERT_DIR/fullchain.crt"
   cert_key="$CERT_DIR/private.key"
   mkdir -p "$CERT_DIR" 2>/dev/null || true
+  # Domain belum di-set (install dilewati): pasang self-signed sementara agar
+  # nginx/443 tetap bisa listen. Ganti domain asli: menu 6 -> 9 Change Domain.
+  if [ -z "$domain" ] || [ "$domain" = "-" ]; then
+    local _cn
+    _cn=$(curl -s4 --max-time 5 https://api.ipify.org 2>/dev/null | tr -d ' \n')
+    [ -z "$_cn" ] && _cn=$(hostname -I 2>/dev/null | awk '{print $1}')
+    [ -z "$_cn" ] && _cn="mytunnel.local"
+    echo -e "${YELLOW}Domain belum diset - pasang self-signed sementara (CN=$_cn)${RESET}"
+    echo -e "${YELLOW}Set domain nanti: menu -> 6 FEATURES -> 9 Change Domain VPS${RESET}"
+    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+      -keyout "$cert_key" -out "$cert_crt" \
+      -subj "/CN=$_cn/O=MyTunnel" -addext "subjectAltName=IP:$_cn" >/dev/null 2>&1 || \
+    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+      -keyout "$cert_key" -out "$cert_crt" -subj "/CN=$_cn/O=MyTunnel" >/dev/null 2>&1 || true
+    [ -s "$cert_crt" ] && [ -s "$cert_key" ] || die "Self-signed gagal dipasang" "Cek izin tulis $CERT_DIR"
+    chmod 600 "$cert_key" 2>/dev/null || true
+    chmod 644 "$cert_crt" 2>/dev/null || true
+    _log "cert: domain belum diset, self-signed dipasang (CN=$_cn)"
+    return 0
+  fi
 
   # cert LE milik domain ini & masih valid -> skip issue (kecuali --force)
   if [ "$FORCE" != "1" ] && [ -s "$cert_crt" ] && [ -s "$cert_key" ]; then
@@ -5311,10 +5346,10 @@ issue_cert() {
       echo -e "${YELLOW}Pasang sertifikat self-signed sementara supaya 443 tetap jalan...${RESET}" | tee -a "$LOG"
       _log "cert: ACME gagal ($domain), pasang self-signed"
       mkdir -p "$CERT_DIR" 2>/dev/null || true
-      [ -f "$CERT_CRT" ] && cp -a "$CERT_CRT" "${CERT_CRT}.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
-      [ -f "$CERT_KEY" ] && cp -a "$CERT_KEY" "${CERT_KEY}.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+      [ -f "$cert_crt" ] && cp -a "$cert_crt" "${cert_crt}.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+      [ -f "$cert_key" ] && cp -a "$cert_key" "${cert_key}.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
       if ! openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-           -keyout "$CERT_KEY" -out "$CERT_CRT" \
+           -keyout "$cert_key" -out "$cert_crt" \
            -subj "/CN=$domain/O=MyTunnel" -addext "subjectAltName=DNS:$domain" 2>>"$LOG"; then
         die "Self-signed ikut gagal dipasang" "Cek $LOG dan izin tulis $CERT_DIR"
       fi
@@ -5765,6 +5800,77 @@ main "$@"
 
 __EMBED_EOF__
 chmod 755 "$ETC/setup/xray.sh"
+# ── xray watchdog: config rusak -> restore backup valid + restart xray ──
+# "Xray sering mati" biasanya config.json invalid setelah ditulis ulang
+# (jq inject gagal / nginx.sh rewrite / cert reload). Guard menangani ini
+# otomatis tiap 60 detik tanpa perlu user sadar.
+cat > "$ETC/setup/xray-guard.sh" << '__EMBED_EOF__'
+#!/bin/bash
+# mytunnel xray-guard - dipanggil systemd timer tiap 60s. Diam bila xray sehat.
+BASE="${MYTUNNEL_PREFIX:-}"
+ETC="${BASE}/etc/mytunnel"
+LOG="${BASE}/var/log/mytunnel.log"
+CFG="${BASE}/usr/local/etc/xray/config.json"
+[ -n "$BASE" ] && exit 0   # test mode: no-op
+XRAY_BIN=$(command -v xray 2>/dev/null || true)
+[ -n "$XRAY_BIN" ] || XRAY_BIN=/usr/local/bin/xray
+[ -x "$XRAY_BIN" ] || exit 0
+_log(){ echo "[$(date '+%Y-%m-%d %H:%M:%S')] xray-guard: $1" >> "$LOG" 2>/dev/null || true; }
+systemctl is-active --quiet xray && exit 0
+_log "xray TIDAK aktif - investigasi"
+# 1) config rusak? cari backup valid terbaru
+if [ -f "$CFG" ] && ! "$XRAY_BIN" run -test -config "$CFG" >/dev/null 2>&1; then
+  _log "config.json tidak valid - cari backup valid"
+  for b in $(ls -t "$CFG".bak-* 2>/dev/null | head -10); do
+    if "$XRAY_BIN" run -test -config "$b" >/dev/null 2>&1; then
+      cp -a "$CFG" "$CFG.broken-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+      cp -a "$b" "$CFG" 2>/dev/null || true
+      chmod 644 "$CFG" 2>/dev/null || true
+      chown nobody:nogroup "$CFG" 2>/dev/null || true
+      _log "config rusak -> restore dari $b"
+      break
+    fi
+  done
+fi
+# 2) restart (jaring pengaman di atas Restart=always systemd)
+if systemctl restart xray >/dev/null 2>&1; then
+  sleep 2
+  if systemctl is-active --quiet xray; then
+    _log "xray direstart, aktif kembali"
+    exit 0
+  fi
+fi
+_log "GAGAL menghidupkan xray - cek: journalctl -u xray -n 50"
+exit 1
+__EMBED_EOF__
+chmod 755 "$ETC/setup/xray-guard.sh"
+if [ -z "${MYTUNNEL_PREFIX:-}" ]; then
+  cat > /etc/systemd/system/mytunnel-xray-guard.service << 'SVCEOF'
+
+Description=mytunnel Xray watchdog (restore config rusak + restart)
+After=xray.service
+
+[Service]
+Type=oneshot
+ExecStart=/etc/mytunnel/setup/xray-guard.sh
+SVCEOF
+  cat > /etc/systemd/system/mytunnel-xray-guard.timer << 'TMREOF'
+
+Description=mytunnel Xray watchdog timer (60s)
+
+[Timer]
+OnBootSec=45
+OnUnitActiveSec=60
+AccuracySec=5s
+
+
+WantedBy=timers.target
+TMREOF
+  chmod 644 /etc/systemd/system/mytunnel-xray-guard.service /etc/systemd/system/mytunnel-xray-guard.timer
+  systemctl daemon-reload 2>/dev/null || true
+  systemctl enable --now mytunnel-xray-guard.timer 2>/dev/null || true
+  echo -e "${GREEN}Xray watchdog terpasang (cek tiap 60s)${RESET}"
+fi
 cat > "$ETC/setup/nginx.sh" << '__EMBED_EOF__'
 #!/bin/bash
 # mytunnel setup/nginx.sh - install & config Nginx (80 WS+HU + 443 TLS WS/HU/gRPC)
@@ -5836,7 +5942,15 @@ install_nginx() {
 write_config() {
   local domain pf tls_ports nontls_ports any_ports config_port http_listens https_listens
   domain=$(get_domain)
-  [ -z "$domain" ] || [ "$domain" = "-" ] && die "Domain belum diisi" "Jalankan setup/domain.sh dulu"
+  # Domain belum di-set (install dilewati): nginx pakai IP VPS sebagai
+  # server_name. Ganti domain asli nanti: menu 6 -> 9 Change Domain VPS.
+  if [ -z "$domain" ] || [ "$domain" = "-" ]; then
+    domain=$(curl -s4 --max-time 5 https://api.ipify.org 2>/dev/null | tr -d ' \n')
+    [ -z "$domain" ] && domain=$(hostname -I 2>/dev/null | awk '{print $1}')
+    [ -z "$domain" ] && domain="_"
+    echo -e "${YELLOW}Domain belum diset - nginx sementara pakai: $domain${RESET}"
+    echo -e "${YELLOW}Set domain nanti: menu -> 6 FEATURES -> 9 Change Domain VPS${RESET}"
+  fi
   pf="$ETC/config/ports.conf"
   # shellcheck disable=SC1090
   [ -f "$pf" ] && . "$pf" 2>/dev/null || true
@@ -14116,6 +14230,30 @@ cat > "$ETC/CHANGELOG.md" << '__EMBED_EOF__'
   alih-alih flag `http2` pada `listen`.
 - Verifikasi live: WS `/vmess` `/vless` `/trojan` @443 = `101`; koneksi gRPC
   mendarat di `8444`; ALPN `h2`/`h2,http/1.1` -> `8444`, `http/1.1` -> `9443`.
+
+
+## v1.9.7 — 2026-11-04 — domain boleh dilewati saat install + xray watchdog
+### Added
+- **Domain bisa dilewati saat install**: prompt `setup/domain.sh` menerima Enter
+  kosong -> `domain.txt` diisi `-`, install lanjut dengan cert self-signed
+  (CN=IP VPS) dan nginx `server_name` pakai IP. Domain asli dipasang belakangan
+  lewat **menu -> 6 FEATURES -> 9 Change Domain VPS** (`features/domain.sh`:
+  issue cert LE domain baru, rollback otomatis kalau cert/nginx gagal).
+- **Xray watchdog** (`setup/xray-guard.sh` + `mytunnel-xray-guard.timer`,
+  cek tiap 60 detik): bila xray tidak aktif, config diuji dengan
+  `xray run -test`; kalau rusak, backup valid terbaru di-restore (config rusak
+  disimpan sebagai `.broken-*`) lalu xray di-restart. Semua tindakan dicatat di
+  `/var/log/mytunnel.log` dengan prefix `xray-guard:`.
+
+### Fixed
+- **cert.sh `_log` tidak terdefinisi** -> `set -e` mematikan script (exit 127)
+  tepat di path fallback self-signed. Sekarang `_log` punya fallback lokal.
+- **cert.sh fallback ACME gagal pakai `$CERT_CRT`/`$CERT_KEY` yang tidak pernah
+  di-set** (fungsi hanya mendefinisikan `cert_crt`/`cert_key`), sehingga
+  `openssl -keyout ""` gagal -> `die "Self-signed ikut gagal dipasang"` ->
+  install mati di tahap [7/13] setiap kali Let's Encrypt gagal (rate limit 429,
+  DNS belum propagasi). Variabel diperbaiki ke `cert_crt`/`cert_key`.
+- **acme.sh email `admin@-`** saat domain belum diset -> diganti `example.com`.
 
 
 ## v1.9.6 — 2026-10-12 — fix stream module dynamic + cert 429 tidak lagi matiin install
