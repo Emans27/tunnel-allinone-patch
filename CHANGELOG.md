@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## v1.9.8 — 2026-11-04 — fix installer mati senyap setelah preflight (VPS baru)
+
+### Fixed
+- **Installer mati TANPA pesan error tepat setelah preflight** (gejala: prompt
+  balik ke shell segera setelah baris `Arch: x86_64 ✓`, tidak ada tahap
+  `[1/13]`). Penyebab: baris
+  `MYTUNNEL_DOMAIN="${MYTUNNEL_DOMAIN:-$(cat /etc/mytunnel/domain.txt 2>/dev/null)}"`
+  di bawah `set -e` — di VPS baru file itu belum ada, `cat` exit 1, status
+  assignment ikut 1, script mati. Ditambah `|| true` di dalam substitution.
+  Bug ini ada sejak base dan juga memengaruhi v1.9.7: fresh install
+  `MYTUNNEL_YES=1 bash install.sh` (tanpa `MYTUNNEL_DOMAIN`) tidak pernah
+  mencapai tahap apa pun. Diuji live mode prefix: install penuh exit 0,
+  `domain.txt` = `-`, cert self-signed CN=IP, nginx `server_name` IP,
+  10 inbounds xray, watchdog terpasang.
+
+
 ## v1.9.7 — 2026-11-04 — domain boleh dilewati saat install + xray watchdog
 
 ### Added

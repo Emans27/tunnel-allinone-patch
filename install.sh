@@ -194,7 +194,10 @@ if [ -z "$MYTUNNEL_PREFIX" ]; then
   case "$ARCH" in x86_64|amd64) echo -e "  Arch: ${GREEN}$ARCH ✓${RESET}";; aarch64|arm64) echo -e "  Arch: ${YELLOW}$ARCH (terbatas, build badvpn mungkin perlu adaptasi)${RESET}";; *) echo -e "  Arch: ${YELLOW}$ARCH (belum diuji)${RESET}";; esac
 fi
 # Force domain & brand dari env/fallback file, jangan prompt
-MYTUNNEL_DOMAIN="${MYTUNNEL_DOMAIN:-$(cat /etc/mytunnel/domain.txt 2>/dev/null)}"
+# CATATAN: `|| true` WAJIB - tanpa ini, VPS baru (file domain.txt belum ada)
+# membuat substitution gagal dan `set -e` mematikan installer TANPA pesan error
+# tepat setelah preflight (gejala: prompt balik ke shell setelah "Arch: ...").
+MYTUNNEL_DOMAIN="${MYTUNNEL_DOMAIN:-$(cat /etc/mytunnel/domain.txt 2>/dev/null || true)}"
 MYTUNNEL_BRAND="${MYTUNNEL_BRAND:-$(cat /etc/mytunnel/brand.txt 2>/dev/null || echo SUNEK VPN)}"
 if [ -z "$MYTUNNEL_BRAND" ]; then MYTUNNEL_BRAND="SUNEK VPN"; fi
 AUTO_YES=1
@@ -14241,6 +14244,21 @@ cat > "$ETC/CHANGELOG.md" << '__EMBED_EOF__'
   alih-alih flag `http2` pada `listen`.
 - Verifikasi live: WS `/vmess` `/vless` `/trojan` @443 = `101`; koneksi gRPC
   mendarat di `8444`; ALPN `h2`/`h2,http/1.1` -> `8444`, `http/1.1` -> `9443`.
+
+
+## v1.9.8 — 2026-11-04 — fix installer mati senyap setelah preflight (VPS baru)
+### Fixed
+- **Installer mati TANPA pesan error tepat setelah preflight** (gejala: prompt
+  balik ke shell segera setelah baris `Arch: x86_64 ✓`, tidak ada tahap
+  `[1/13]`). Penyebab: baris
+  `MYTUNNEL_DOMAIN="${MYTUNNEL_DOMAIN:-$(cat /etc/mytunnel/domain.txt 2>/dev/null)}"`
+  di bawah `set -e` — di VPS baru file itu belum ada, `cat` exit 1, status
+  assignment ikut 1, script mati. Ditambah `|| true` di dalam substitution.
+  Bug ini ada sejak base dan juga memengaruhi v1.9.7: fresh install
+  `MYTUNNEL_YES=1 bash install.sh` (tanpa `MYTUNNEL_DOMAIN`) tidak pernah
+  mencapai tahap apa pun. Diuji live mode prefix: install penuh exit 0,
+  `domain.txt` = `-`, cert self-signed CN=IP, nginx `server_name` IP,
+  10 inbounds xray, watchdog terpasang.
 
 
 ## v1.9.7 — 2026-11-04 — domain boleh dilewati saat install + xray watchdog
