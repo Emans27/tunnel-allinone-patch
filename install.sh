@@ -9684,7 +9684,7 @@ LR_CONF="${LR_CONF:-/etc/login-report/config.conf}"
 # default semua key — pastikan tidak ada unbound variable walau config hilang/rusak
 lr_defaults(){
   BOT_TOKEN=""; CHAT_ID=""; ENABLED="off"; INTERVAL_MIN="30"; DAILY_AT=""
-  SEND_SSH="on"; SEND_VMESS="on"; SEND_VLESS="on"; SEND_TROJAN="on"
+  SEND_SSH="on"; SEND_VMESS="on"; SEND_VLESS="on"; SEND_TROJAN="on"; SEND_EXPIRED="on"
   XRAY_LOG_MINUTES="15"; XRAY_ACCESS_LOG="/var/log/xray/access.log"
   XRAY_CONFIG="/usr/local/etc/xray/config.json"; XRAY_API_ADDR="127.0.0.1:10085"
   DOMAIN="auto"; INFO_COLUMNS=""; CURL_RETRY="2"; CURL_TIMEOUT="20"
@@ -9698,7 +9698,7 @@ lr_load_conf(){
     key=${line%%=*}; val=${line#*=}
     key=$(printf '%s' "$key" | tr -d ' ' | tr -c 'A-Za-z0-9_' '_')
     case "$key" in
-      BOT_TOKEN|CHAT_ID|ENABLED|INTERVAL_MIN|DAILY_AT|SEND_SSH|SEND_VMESS|SEND_VLESS|SEND_TROJAN|XRAY_LOG_MINUTES|DOMAIN|INFO_COLUMNS|XRAY_ACCESS_LOG|XRAY_CONFIG|XRAY_API_ADDR|CURL_RETRY|CURL_TIMEOUT)
+      BOT_TOKEN|CHAT_ID|ENABLED|INTERVAL_MIN|DAILY_AT|SEND_SSH|SEND_VMESS|SEND_VLESS|SEND_TROJAN|SEND_EXPIRED|XRAY_LOG_MINUTES|DOMAIN|INFO_COLUMNS|XRAY_ACCESS_LOG|XRAY_CONFIG|XRAY_API_ADDR|CURL_RETRY|CURL_TIMEOUT)
         # buang kutip pembungkus ("..." atau '...')
         val=${val%\"}; val=${val#\"}; val=${val%\'}; val=${val#\'}
         eval "$key=\$val" ;;
@@ -9718,7 +9718,7 @@ lr_set_conf(){
     lr_defaults
     { printf '# login-report config (auto-created)\n'
       printf 'BOT_TOKEN=""\nCHAT_ID=""\nENABLED=off\nINTERVAL_MIN=30\nDAILY_AT=""\n'
-      printf 'SEND_SSH=on\nSEND_VMESS=on\nSEND_VLESS=on\nSEND_TROJAN=on\n'
+      printf 'SEND_SSH=on\nSEND_VMESS=on\nSEND_VLESS=on\nSEND_TROJAN=on\nSEND_EXPIRED=on\n'
       printf 'XRAY_LOG_MINUTES=15\nXRAY_ACCESS_LOG=/var/log/xray/access.log\n'
       printf 'XRAY_CONFIG=/usr/local/etc/xray/config.json\nXRAY_API_ADDR=127.0.0.1:10085\n'
       printf 'DOMAIN=auto\nINFO_COLUMNS=""\nCURL_RETRY=2\nCURL_TIMEOUT=20\n'
@@ -9986,6 +9986,46 @@ lr_db_limit_ip(){
   case "$v" in ""|0) echo "-";; *) echo "$v";; esac
 }
 
+# ── expired users ────────────────────────────────────────────
+# keluarkan baris: "user | YYYY-MM-DD" (hanya yang expired / non-active)
+lr_expired_list(){
+  local proto="$1" f line u exp st now
+  f=$(lr_db_file "$proto")
+  [ -r "$f" ] || return 0
+  now=$(date +%s)
+  while IFS='|' read -r u pass exp limit_ip quota used status; do
+    [ -z "$u" ] && continue
+    [ "$status" = "active" ] && continue
+    # abaikan baris yang tidak punya expiry valid
+    [ -z "$exp" ] && continue
+    # normalisasi expiry: YYYY-MM-DD atau epoch
+    if [[ "$exp" =~ ^[0-9]{10}$ ]]; then
+      [ "$exp" -gt "$now" ] && continue
+    elif [[ "$exp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+      [ "$(date -d "$exp" +%s 2>/dev/null || echo 0)" -gt "$now" ] && continue
+    fi
+    printf '%s | %s\n' "$u" "$exp"
+  done < "$f" 2>/dev/null | sort -f
+}
+
+lr_expired_block(){
+  local proto="$1"
+  local rows out="" total=0
+  rows=$(lr_expired_list "$proto")
+  out+=$'Account Expired '"$proto"$'\n'
+  if [ -z "$rows" ]; then
+    out+=$'(tidak ada user expired)\n'
+  else
+    while read -r line; do
+      [ -z "$line" ] && continue
+      out+="$line"$'\n'
+      total=$((total+1))
+    done <<< "$rows"
+  fi
+  out+=$(printf 'Total : %s\n' "$total")
+  printf '<pre>%s</pre>' "${out%$'\n'}"
+}
+
 # ── Xray: blok per protokol ─────────────────────────────────
 # keluarkan <pre> blok untuk satu protokol (VMESS|VLESS|TROJAN)
 lr_xray_block(){
@@ -10233,6 +10273,70 @@ lr_build_html(){
   printf '%s' "${out%$'\n'}"
 }
 
+# ── susun laporan expired ──────────────────────────────────
+lr_build_expired_messages(){
+  local ip dom isp header="" first=1 spec block out
+  ip=$(lr_public_ip); dom=$(lr_domain); isp=$(lr_isp "$ip")
+  header=$(printf '<pre>IP     : %s\nDOMAIN : %s\nISP    : %s\n</pre>' "$ip" "$dom" "$isp")
+
+  local __out="${1:-LR_MSGS}"
+  eval "$__out=()"
+
+  local specs=()
+  [ "${SEND_SSH:-on}"    = "on" ] && specs+=("SSH")
+  [ "${SEND_VMESS:-on}"  = "on" ] && specs+=("VMESS")
+  [ "${SEND_VLESS:-on}"  = "on" ] && specs+=("VLESS")
+  [ "${SEND_TROJAN:-on}" = "on" ] && specs+=("TROJAN")
+
+  for spec in "${specs[@]}"; do
+    block=$(lr_expired_block "$spec")
+    [ -z "$block" ] && continue
+    out=""
+    if [ "$first" = "1" ]; then out+="$header"$'\n'; first=0; fi
+    out+="$block"
+    eval "$__out+=(\"\$out\")"
+  done
+}
+
+lr_send_expired_report(){
+  [ "${SEND_EXPIRED:-on}" != "on" ] && return 0
+  local chat="${CHAT_ID:-}"
+  [ -z "$chat" ] && { lr_warn "CHAT_ID belum diatur"; return 2; }
+
+  local -a msgs=()
+  lr_build_expired_messages msgs
+  [ "${#msgs[@]}" -eq 0 ] && { lr_log "tidak ada user expired"; return 0; }
+
+  local parts=() cur="" chunk m
+  for m in "${msgs[@]}"; do
+    if [ "${#m}" -le 3900 ]; then parts+=("$m"); continue; fi
+    cur=""
+    while IFS= read -r chunk; do
+      [ -z "$chunk" ] && continue
+      if [ $(( ${#cur} + ${#chunk} + 1 )) -gt 3800 ]; then
+        parts+=("$cur"); cur="$chunk"
+      else
+        cur+="$chunk"
+      fi
+    done < <(lr_split_pre "$m")
+    [ -n "$cur" ] && parts+=("$cur")
+  done
+
+  local n=0 failed=0 sent=0 w
+  for w in "${parts[@]}"; do
+    n=$((n+1))
+    if lr_tg_send "$chat" "$w"; then sent=$((sent+1))
+    else failed=1; fi
+    [ "$n" -lt "${#parts[@]}" ] && sleep "${SEND_DELAY:-1.5}"
+  done
+  if [ "$failed" -eq 1 ]; then
+    lr_log "laporan expired GAGAL ($sent/$n pesan, chat $chat)"
+    return 1
+  fi
+  lr_log "laporan expired terkirim ($n pesan, chat $chat)"
+  return 0
+}
+
 # ── schedule systemd timer ──────────────────────────────────
 lr_timer_apply(){
   # on-calendar based; dipanggil setiap INTERVAL_MIN/DAILY_AT berubah
@@ -10275,7 +10379,9 @@ EOF
 # ── entry point CLI (dipakai systemd service) ───────────────
 main(){
   lr_load_conf || exit 1
-  if lr_send_report; then exit 0
+  if lr_send_report; then
+    lr_send_expired_report || true
+    exit 0
   else
     lr_warn "pengiriman gagal — cek: lreport → 6 (status)"
     exit 1
@@ -10308,6 +10414,7 @@ SEND_SSH=on
 SEND_VMESS=on
 SEND_VLESS=on
 SEND_TROJAN=on
+SEND_EXPIRED=on
 
 # ─── Sumber data ───────────────────────────────────────────
 # window log Xray (menit) untuk hitung user aktif
@@ -10356,6 +10463,7 @@ lr_show_status(){
   printf '  Chat ID         : %s\n' "${CHAT_ID:--}"
   printf '  Protokol        : SSH=%s VMESS=%s VLESS=%s TROJAN=%s\n' \
     "${SEND_SSH:-on}" "${SEND_VMESS:-on}" "${SEND_VLESS:-on}" "${SEND_TROJAN:-on}"
+  printf '  Notif expired   : %s\n' "$([ "${SEND_EXPIRED:-on}" = on ] && echo "${G}ON${N}" || echo "${Y}OFF${N}")"
   printf '  Window log      : %s menit\n' "${XRAY_LOG_MINUTES:-15}"
   printf '  Stats API       : %s\n' "$(lr_xray_stats_ready && echo 'READY (per-inbound)' || echo "${Y}TIDAK — per-user butuh loglevel detail${N}")"
   printf '  Log file        : %s\n' "$LR_LOG"
@@ -10377,6 +10485,7 @@ while true; do
   printf '%s\n' "  5) Kirim laporan test sekarang"
   printf '%s\n' "  6) Lihat status detail"
   printf '%s\n' "  7) Uninstall"
+  printf '%s\n' "  8) Atur notifikasi expired"
   printf '%s\n' "  0) Keluar"
   echo
   printf '  Pilih: '
@@ -10449,7 +10558,13 @@ while true; do
         lr_warn "Token/Chat belum lengkap (menu 1)"; pause; continue
       fi
       echo "  Kirim test ke chat ${CHAT_ID} ..."
-      if lr_send_report; then lr_ok "Terkirim — cek Telegram"; else lr_warn "Gagal kirim (cek log: $LR_LOG)"; fi
+      if lr_send_report; then lr_ok "Terkirim — cek Telegram"
+      else lr_warn "Gagal kirim (cek log: $LR_LOG)"; fi
+      if [ "${SEND_EXPIRED:-on}" = "on" ]; then
+        echo "  Kirim test expired ..."
+        if lr_send_expired_report; then lr_ok "Expired terkirim — cek Telegram"
+        else lr_warn "Gagal kirim expired (cek log: $LR_LOG)"; fi
+      fi
       pause ;;
     6) # ── status detail ───────────────────────────────────
       lr_load_conf; echo; lr_show_status; echo
@@ -10472,6 +10587,16 @@ while true; do
         lr_ok "Uninstall selesai — tunneling lama tidak disentuh"
         exit 0
       else lr_warn "Dibatalkan"; fi
+      pause ;;
+    8) # ── notifikasi expired ───────────────────────────────
+      lr_load_conf; echo
+      printf '  Notifikasi expired user [%s] (y/n): ' "$([ "${SEND_EXPIRED:-on}" = on ] && echo ON || echo OFF)"
+      read -r a
+      case "$a" in
+        y|Y) lr_set_conf SEND_EXPIRED on; lr_ok "Notifikasi expired: ON" ;;
+        n|N) lr_set_conf SEND_EXPIRED off; lr_ok "Notifikasi expired: OFF" ;;
+        *) lr_warn "Dibatalkan" ;;
+      esac
       pause ;;
     0) exit 0 ;;
     *) : ;;
