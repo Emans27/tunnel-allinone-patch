@@ -5,9 +5,11 @@
 ### Added
 - **Domain bisa dilewati saat install**: prompt `setup/domain.sh` menerima Enter
   kosong -> `domain.txt` diisi `-`, install lanjut dengan cert self-signed
-  (CN=IP VPS) dan nginx `server_name` pakai IP. Domain asli dipasang belakangan
-  lewat **menu -> 6 FEATURES -> 9 Change Domain VPS** (`features/domain.sh`:
-  issue cert LE domain baru, rollback otomatis kalau cert/nginx gagal).
+  (CN=IP VPS) dan nginx `server_name` pakai IP. Non-interaktif: `MYTUNNEL_YES=1`
+  tanpa `MYTUNNEL_DOMAIN` (atau `MYTUNNEL_SKIP_DOMAIN=1`) langsung lewat tanpa
+  prompt. Domain asli dipasang belakangan lewat **menu -> 6 FEATURES -> 9 Change
+  Domain VPS** (`features/domain.sh`: issue cert LE domain baru, rollback
+  otomatis kalau cert/nginx gagal).
 - **Xray watchdog** (`setup/xray-guard.sh` + `mytunnel-xray-guard.timer`, cek
   tiap 60 detik): bila xray tidak aktif, config diuji dengan `xray run -test`;
   kalau rusak, backup valid terbaru di-restore (config rusak disimpan sebagai

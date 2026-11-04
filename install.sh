@@ -4900,6 +4900,17 @@ main() {
     return 0
   fi
 
+  # non-interaktif tanpa domain: MYTUNNEL_YES=1 atau MYTUNNEL_SKIP_DOMAIN=1
+  # -> lewati prompt, install lanjut dengan self-signed + nginx pakai IP.
+  if [ -n "${MYTUNNEL_YES:-}" ] || [ -n "${MYTUNNEL_SKIP_DOMAIN:-}" ]; then
+    mkdir -p "$(dirname "$DOMAIN_FILE")"
+    echo "-" > "$DOMAIN_FILE"
+    chmod 644 "$DOMAIN_FILE" 2>/dev/null || true
+    echo -e "${YELLOW}Domain dilewati (non-interaktif). Pasang domain nanti: menu -> 6 FEATURES -> 9 Change Domain VPS${RESET}"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] domain dilewati (non-interaktif, MYTUNNEL_YES/SKIP_DOMAIN)" >> "$LOG" 2>/dev/null || true
+    return 0
+  fi
+
   # interactive
   while true; do
     echo -ne "${CYAN}Masukkan domain (contoh: sg1.example.com) [Enter = lewati]: ${RESET}"
@@ -14236,8 +14247,10 @@ cat > "$ETC/CHANGELOG.md" << '__EMBED_EOF__'
 ### Added
 - **Domain bisa dilewati saat install**: prompt `setup/domain.sh` menerima Enter
   kosong -> `domain.txt` diisi `-`, install lanjut dengan cert self-signed
-  (CN=IP VPS) dan nginx `server_name` pakai IP. Domain asli dipasang belakangan
-  lewat **menu -> 6 FEATURES -> 9 Change Domain VPS** (`features/domain.sh`:
+  (CN=IP VPS) dan nginx `server_name` pakai IP. Non-interaktif: cukup
+  `MYTUNNEL_YES=1` tanpa `MYTUNNEL_DOMAIN` (atau `MYTUNNEL_SKIP_DOMAIN=1`) —
+  prompt tidak muncul sama sekali. Domain asli dipasang belakangan lewat
+  **menu -> 6 FEATURES -> 9 Change Domain VPS** (`features/domain.sh`:
   issue cert LE domain baru, rollback otomatis kalau cert/nginx gagal).
 - **Xray watchdog** (`setup/xray-guard.sh` + `mytunnel-xray-guard.timer`,
   cek tiap 60 detik): bila xray tidak aktif, config diuji dengan

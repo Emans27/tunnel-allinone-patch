@@ -7,10 +7,22 @@ Tunneling All-In-One untuk **Debian 11/12 + Ubuntu 18/20/22/24**. Xray VMess/VLe
 Sekali paste, di VPS **root**:
 
 ```bash
-wget -qO install.sh https://raw.githubusercontent.com/Emans27/tunnel-allinone/main/install.sh && MYTUNNEL_DOMAIN=domain.kamu MYTUNNEL_YES=1 bash install.sh
+wget -qO install.sh https://raw.githubusercontent.com/Emans27/tunnel-allinone/main/install.sh && MYTUNNEL_YES=1 bash install.sh
 ```
 
-Syarat: domain A-record -> IP VPS, Cloudflare proxy OFF (awan abu), port 80/443/444/81/8443 kosong.
+**Domain opsional.** Kalau `MYTUNNEL_DOMAIN` tidak diisi (atau Enter saja saat
+prompt), install lanjut dengan cert self-signed sementara dan nginx pakai IP VPS.
+Domain asli dipasang belakangan lewat **menu -> 6 FEATURES -> 9 Change Domain VPS**
+(issue cert Let's Encrypt domain baru, rollback otomatis kalau gagal).
+
+Dengan domain langsung:
+
+```bash
+MYTUNNEL_DOMAIN=domain.kamu MYTUNNEL_YES=1 bash install.sh
+```
+
+Syarat (kalau pakai domain): A-record -> IP VPS, Cloudflare proxy OFF (awan abu),
+port 80/443/444/81/8443 kosong.
 
 Setelah selesai:
 
