@@ -1,4 +1,9 @@
 # CHANGELOG
+## v1.10.1 — 2026-11-11 — data SlowDNS di output akun SSH + notifikasi Telegram
+
+### Added
+- Create/trial SSH menampilkan NS domain, tipe record, dan public key (64 hex) di output akun dan notifikasi Telegram. Private key tidak pernah ditampilkan.
+
 ## v1.10.0 — 2026-11-11 — Dropbear 2019.78 wajib, SlowDNS multi-record + public key, UDPGW publik 7300, nginx lebih aman
 
 ### Dropbear WAJIB 2019.78 (dibangun dari source)
@@ -25,6 +30,9 @@ menghasilkan **2020.81**, padahal 2019 yang dipakai klien tunneling. Sekarang:
 ditambah komentar peringatan di script dan pemeriksaan pasca-restart yang
 memunculkan error merah bila `-s`/`-g` muncul lagi.
 Diverifikasi live: user password di port 90 → `LOGIN_OK`.
+
+### Create/trial SSH memuat data SlowDNS
+- Output akun dan notifikasi Telegram kini menampilkan NS domain, tipe record, dan public key (64 hex). Private key tidak pernah ditampilkan.
 
 ### SlowDNS multi-record + public key ditampilkan
 - Binary server = vaydns fork (multi-record + fallback) dari release repo ini

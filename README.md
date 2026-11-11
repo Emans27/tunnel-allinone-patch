@@ -1,4 +1,4 @@
-# MyTunnel — TUNNEL PRO v1.10.0
+# MyTunnel — TUNNEL PRO v1.10.1
 
 Tunneling All-In-One untuk **Debian 12/13 + Ubuntu 22.04/24.04/26.04**. Xray VMess/VLess/Trojan (WS, gRPC, HTTPUpgrade) + SSH/Dropbear 2019.78 + OpenSSH, Nginx 443 exclusive.
 
@@ -12,6 +12,8 @@ Tunneling All-In-One untuk **Debian 12/13 + Ubuntu 22.04/24.04/26.04**. Xray VMe
 | Nginx | Repo resmi nginx.org dipakai → versi mainline terbaru, otomatis saat install/update (perbaikan CVE nginx 2026). |
 | Xray | VMess/VLESS/Trojan WS + HTTPUpgrade + gRPC (ALPN h2 lewat 443/8444). |
 
+
+Create/trial SSH menampilkan NS domain, tipe record, dan public key SlowDNS di output akun serta notifikasi Telegram; private key tetap rahasia.
 
 ## Install
 

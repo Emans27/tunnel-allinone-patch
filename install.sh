@@ -1,5 +1,5 @@
 #!/bin/bash
-# mytunnel install.sh - SUNEK VPN v1.9.0 (TAHAP 1+2+3+4+5+6+8)
+# mytunnel install.sh - SUNEK VPN v1.10.1 (TAHAP 1+2+3+4+5+6+8)
 # Debian 11/12, Ubuntu 18/20/22/24 - disarankan Debian 12 / Ubuntu 22.04
 # Idempotent, testable via MYTUNNEL_PREFIX=... MYTUNNEL_DOMAIN=example.com bash install.sh --no-deps
 # Aman: wget -qO install.sh https://raw.githubusercontent.com/USER/REPO/main/install.sh && less install.sh && bash install.sh
@@ -240,7 +240,11 @@ if [ -n "$MYTUNNEL_BRAND" ]; then
     chmod 644 "$ETC/config/brand.txt" 2>/dev/null || true
   fi
 fi
-[ -f "$ETC/config/domain.txt" ] || echo "-" > "$ETC/config/domain.txt"
+if [ -n "$MYTUNNEL_DOMAIN" ] && [ "$MYTUNNEL_DOMAIN" != "-" ]; then
+  printf '%s\n' "$MYTUNNEL_DOMAIN" > "$ETC/config/domain.txt"
+else
+  [ -f "$ETC/config/domain.txt" ] || echo "-" > "$ETC/config/domain.txt"
+fi
 [ -f "$ETC/config/expiry.txt" ] || echo "-" > "$ETC/config/expiry.txt"
 [ -f "$ETC/config/banner.txt" ] || echo " | SUNEK VPN - No hacking, use legally |" > "$ETC/config/banner.txt"
 if [ ! -f "$ETC/config/ports.conf" ]; then
@@ -1087,6 +1091,25 @@ ssh_account_block() {
   local OPENVPN_TCP_PORT="1194" OPENVPN_SSL_PORT="442" OPENVPN_UDP_PORT="25000" OPENVPN_DNS_PORT="53" OHP_OVPN_PORT="9088"
   # shellcheck disable=SC1090
   if [ -f "$pf" ]; then . "$pf" 2>/dev/null || true; fi
+  # Tampilkan NS + public key SlowDNS untuk setiap akun create/trial.
+  # Baca field NS_DOMAIN tanpa source config; jangan pernah tampilkan private key.
+  # Ponytail: hanya parser NS_DOMAIN/RTYPE sederhana; perluas jika format config berubah.
+  local sd_base="${MYTUNNEL_PREFIX:-}" sd_conf sd_ns="belum dikonfigurasi" sd_type="-"
+  local sd_pubfile sd_pubkey="belum tersedia"
+  sd_conf="${sd_base}/etc/mytunnel/config/slowdns.conf"
+  sd_pubfile="${sd_base}/etc/mytunnel/slowdns/server.pub"
+  [ -n "$sd_base" ] || { sd_conf="/etc/mytunnel/config/slowdns.conf"; sd_pubfile="/etc/mytunnel/slowdns/server.pub"; }
+  if [ -f "$sd_conf" ]; then
+    sd_ns=$(sed -n 's/^NS_DOMAIN="\([A-Za-z0-9.-]*\)"$/\1/p' "$sd_conf" 2>/dev/null | head -n1)
+    sd_type=$(sed -n 's/^RTYPE="\([A-Za-z]*\)"$/\1/p' "$sd_conf" 2>/dev/null | head -n1)
+    [ -n "$sd_ns" ] || sd_ns="belum dikonfigurasi"
+    [ -n "$sd_type" ] || sd_type="TXT"
+  fi
+  if [ -s "$sd_pubfile" ]; then
+    local _sd_candidate
+    _sd_candidate=$(head -n1 "$sd_pubfile" 2>/dev/null | tr -d '\r\n')
+    if [[ "$_sd_candidate" =~ ^[[:xdigit:]]{64}$ ]]; then sd_pubkey="$_sd_candidate"; fi
+  fi
   local DASH="------------------------------------"
   local t n
   t=$(printf '%s' "${TLS_PORT:-}" | tr -d ' ' | cut -d',' -f1)
@@ -1108,6 +1131,9 @@ ssh_account_block() {
   printf '%-15s : %s\n' "Dropbear" "${DROPBEAR_PORT:-}"
   printf '%s\n' "$DASH"
   printf '%-15s : %s\n' "SlowDNS" "${SLOWDNS_PORT:-}"
+  printf '%-15s : %s\n' "SlowDNS NS" "$sd_ns"
+  printf '%-15s : %s\n' "SlowDNS Type" "$sd_type"
+  printf '%-15s : %s\n' "SlowDNS Pubkey" "$sd_pubkey"
   printf '%-15s : %s\n' "UDP-Custom" "${UDP_CUSTOM_PORT:-}"
   printf '%-15s : %s\n' "OHP + SSH" "${OHP_SSH_PORT:-}"
   printf '%-15s : %s\n' "Squid Proxy" "${SQUID_PORT:-}"
@@ -14603,7 +14629,7 @@ cat > "$ETC/config/dropbear_versions.txt" << '__EMBED_EOF__'
 __EMBED_EOF__
 chmod 644 "$ETC/config/dropbear_versions.txt"
 cat > "$ETC/config/version.txt" << '__EMBED_EOF__'
-v1.10.0
+v1.10.1
 __EMBED_EOF__
 chmod 644 "$ETC/config/version.txt"
 cat > "$ETC/config/repo.txt" << '__EMBED_EOF__'
@@ -14612,6 +14638,11 @@ __EMBED_EOF__
 chmod 644 "$ETC/config/repo.txt"
 cat > "$ETC/CHANGELOG.md" << '__EMBED_EOF__'
 # CHANGELOG
+## v1.10.1 — 2026-11-11 — data SlowDNS di output akun SSH + notifikasi Telegram
+
+### Added
+- Create/trial SSH menampilkan NS domain, tipe record, dan public key (64 hex) di output akun dan notifikasi Telegram. Private key tidak pernah ditampilkan.
+
 ## v1.10.0 — 2026-11-11 — Dropbear 2019.78 wajib, SlowDNS multi-record + public key, UDPGW publik 7300, nginx lebih aman
 
 ### Dropbear WAJIB 2019.78 (dibangun dari source)
@@ -14638,6 +14669,9 @@ menghasilkan **2020.81**, padahal 2019 yang dipakai klien tunneling. Sekarang:
 ditambah komentar peringatan di script dan pemeriksaan pasca-restart yang
 memunculkan error merah bila `-s`/`-g` muncul lagi.
 Diverifikasi live: user password di port 90 → `LOGIN_OK`.
+
+### Create/trial SSH memuat data SlowDNS
+- Output akun dan notifikasi Telegram kini menampilkan NS domain, tipe record, dan public key (64 hex). Private key tidak pernah ditampilkan.
 
 ### SlowDNS multi-record + public key ditampilkan
 - Binary server = vaydns fork (multi-record + fallback) dari release repo ini
@@ -15225,7 +15259,7 @@ Tidak memperbaiki tanpa menyelaraskan versi klien/server, jadi XHTTP dihapus.
 __EMBED_EOF__
 chmod 644 "$ETC/CHANGELOG.md"
 cat > "$ETC/VERSION" << '__EMBED_EOF__'
-v1.10.0
+v1.10.1
 __EMBED_EOF__
 chmod 644 "$ETC/VERSION"
 cat > "$ETC/menu/doctor.sh" << '__EMBED_EOF__'
