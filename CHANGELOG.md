@@ -1,4 +1,70 @@
 # CHANGELOG
+## v1.10.0 — 2026-11-11 — Dropbear 2019.78 wajib, SlowDNS multi-record + public key, UDPGW publik 7300, nginx lebih aman
+
+### Dropbear WAJIB 2019.78 (dibangun dari source)
+`install_dropbear()` sebelumnya cuma `apt-get install -y dropbear` → di Ubuntu 22.04
+menghasilkan **2020.81**, padahal 2019 yang dipakai klien tunneling. Sekarang:
+- Unduh `dropbear-2019.78.tar.bz2` dari mirror resmi (`matt.ucc.asn.au` → fallback
+  `dropbear.nl`), **verifikasi SHA256**
+  (`525965971272270995364a0eb01f35180d793182e63dd0b0c3eb0292291644a4`).
+- Build dengan `-fcommon` bila GCC ≥ 10 (default `-fno-common` membuat link gagal).
+- Binary dipasang ke `/usr/local/sbin/dropbear-2019`; `/usr/sbin/dropbear` jadi
+  **wrapper** ke binary itu, karena init.d Debian/Ubuntu menunjuk jalur tersebut —
+  tanpa wrapper, service tetap menjalankan 2020.81 dari paket apt.
+- Host key RSA/ECDSA dibuat otomatis. Catatan: **ed25519 tidak ada di 2019.78**
+  (hanya rsa/dss/ecdsa) — jangan minta dropbearkey 2019 membuat ed25519, ia gagal.
+- Idempoten: kalau `/usr/sbin/dropbear -V` sudah `v2019.*`, build dilewati.
+- Verifikasi versi dilakukan lewat path absolut `/usr/sbin/dropbear`, bukan `dropbear`
+  dari PATH (PATH bisa menunjuk binary paket apt).
+
+### BUG KRITIS: login password Dropbear dimatikan `-s -g`
+`DROPBEAR_EXTRA_ARGS` lama berisi `-b <banner> -s -g`. Pada Dropbear:
+`-s` = matikan **semua** login password, `-g` = matikan password login untuk root
+→ praktis semua akun tunneling ditolak, klien cuma melihat
+`Permission denied (publickey)`. Sekarang flag itu dihapus (hanya `-b <banner>`),
+ditambah komentar peringatan di script dan pemeriksaan pasca-restart yang
+memunculkan error merah bila `-s`/`-g` muncul lagi.
+Diverifikasi live: user password di port 90 → `LOGIN_OK`.
+
+### SlowDNS multi-record + public key ditampilkan
+- Binary server = vaydns fork (multi-record + fallback) dari release repo ini
+  (tag `dnstt-multi`) dengan verifikasi SHA256 per arsitektur (amd64/arm64).
+- `-record-type` mendukung **TXT, NULL, CNAME, NS, MX, SRV** — bisa dipilih saat
+  instal dan panduan record DNS dicetak sesuai tipe. Aplikasi klien yang punya
+  pilihan Type (Automatic/TXT/NULL/…) langsung cocok.
+- Saat instal, **public key (64 hex) dicetak dalam blok menonjol** supaya bisa
+  ditempel ke kolom PUBKEY aplikasi klien; `SlowDNS → status` juga menampilkannya penuh.
+- Port 53 dibebaskan dari stub `systemd-resolved` dengan backup + rollback bila unduh gagal.
+
+### UDPGW publik di UDP/7300
+- Wrapper badvpn-udpgw sekarang **satu proses publik `0.0.0.0:7300`**
+  (`--udp-mtu 65507`), bukan 5 listener loopback — UDP & DNS (HTTP Custom, klien
+  badvpn) jalan lewat port ini.
+- `ufw allow 7300/udp` dipanggil di dua tempat: `install_udpgw()` dan `setup_ufw()`
+  (dulu firewall tidak pernah membuka 7300 → service aktif tapi klien tak bisa konek).
+
+### Nginx: update CVE otomatis + aturan lebih aman
+- `add_nginx_official_repo()` + `update_nginx_cve()`: repo resmi nginx.org
+  ditambahkan, lalu `apt-get install --only-upgrade nginx libnginx-mod-stream`.
+  Dijalankan setiap kali installer/auto-update dipanggil, jadi nginx distro yang
+  membeku (Ubuntu 22.04 = 1.18.0) ikut terbarui. `nginx -t` dulu sebelum restart.
+- **Port 81 tidak lagi `autoindex on`** (itu mengekspos seluruh isi `/var/www/html`).
+  Sekarang `location /` mengembalikan 404 dan hanya `/myvpn-config.zip` yang dilayani,
+  dengan `limit_except GET HEAD { deny all; }` + `X-Content-Type-Options nosniff`.
+- Location `/whatever` tidak lagi memakai `rewrite ^/whatever$ /vmess break;`;
+  pemetaan ke endpoint Xray dilakukan lewat URI di `proxy_pass`
+  (`proxy_pass http://127.0.0.1:10001/vmess;`). Exact-match location tetap, tanpa
+  regex yang bisa cocok ke varian path lain.
+
+### Matrix OS disamakan dengan dukungan nyata
+Preflight sekarang menerima **Debian 12/13 dan Ubuntu 22.04/24.04/26.04** (sebelumnya
+Ubuntu 18/20 + Debian 11/12). Versi di luar matrix hanya jadi peringatan.
+
+### Semua URL diarahkan ke repo `tunnel-allinone-patch`
+`--help`, banner instruksi, dan default `config/repo.txt` (dipakai Auto Update)
+menunjuk repo ini. Sebelumnya `repo.txt` menunjuk repo base yang tertinggal versi →
+auto-update akan "menurunkan" VPS kembali ke rilis lama.
+
 ## v1.9.10 — 2026-11-11 — fix unit systemd xray-guard rusak + update-login-report gagal senyap
 
 

@@ -1,14 +1,28 @@
-# MyTunnel — TUNNEL PRO v1.9.10
+# MyTunnel — TUNNEL PRO v1.10.0
 
-Tunneling All-In-One untuk **Debian 11/12 + Ubuntu 18/20/22/24**. Xray VMess/VLess/Trojan (WS, gRPC, HTTPUpgrade) + SSH/Dropbear/OpenSSH, Nginx 443 exclusive.
+Tunneling All-In-One untuk **Debian 12/13 + Ubuntu 22.04/24.04/26.04**. Xray VMess/VLess/Trojan (WS, gRPC, HTTPUpgrade) + SSH/Dropbear 2019.78 + OpenSSH, Nginx 443 exclusive.
+
+## Komponen khusus
+
+| Komponen | Versi / catatan |
+|---|---|
+| Dropbear | **WAJIB 2019.78**, dibangun dari source saat install (apt memberi 2020.81 → ditolak). Kalau versi terpasang bukan 2019, installer build ulang otomatis. |
+| SlowDNS | Multi-record: **TXT / NULL / CNAME / NS / MX / SRV**. Public key dicetak saat install dan di `Advanced → SlowDNS → status`. |
+| UDPGW | badvpn-udpgw publik di **UDP/7300** (HTTP Custom + klien badvpn). UDP & DNS lewat gateway ini. |
+| Nginx | Repo resmi nginx.org dipakai → versi mainline terbaru, otomatis saat install/update (perbaikan CVE nginx 2026). |
+| Xray | VMess/VLESS/Trojan WS + HTTPUpgrade + gRPC (ALPN h2 lewat 443/8444). |
+
 
 ## Install
 
-**Domain WAJIB diisi.** Install tanpa domain akan gagal (bug terdokumentasi, lihat bawah).
+**Domain WAJIB diisi** untuk sertifikat Let's Encrypt. Tanpa domain, installer tetap
+lanjut dengan cert self-signed (CN=IP VPS) — cukup untuk uji, tapi klien akan
+memperingatkan. Pasang domain belakangan lewat **menu → 6 FEATURES → 9 Change Domain VPS**.
+
 Sekali paste, di VPS **root** — ganti `domain.kamu` dengan domain Anda:
 
 ```bash
-wget -qO install.sh https://raw.githubusercontent.com/Emans27/tunnel-allinone/main/install.sh \
+wget -qO install.sh https://raw.githubusercontent.com/Emans27/tunnel-allinone-patch/main/install.sh \
   && MYTUNNEL_DOMAIN=domain.kamu MYTUNNEL_BRAND="SUNEK VPN" MYTUNNEL_YES=1 bash install.sh
 ```
 
@@ -25,21 +39,18 @@ ss -tlnp | grep -E ':(80|443|8443|444|90)\b'
 menu
 ```
 
-### Kenapa domain wajib?
+### Domain kosong: apa yang terjadi
 
-Dua bug installer terpicu kalau domain kosong (Enter saja / `MYTUNNEL_DOMAIN` tak diisi):
+Sejak v1.9.7 domain boleh dilewati (prompt `setup/domain.sh` menerima Enter kosong,
+atau non-interaktif dengan `MYTUNNEL_SKIP_DOMAIN=1`). Installer lanjut dengan cert
+self-signed CN=IP dan nginx `server_name` = IP. Dua bug lama di jalur ini sudah diperbaiki:
 
 1. **Install mati diam-diam setelah `Arch: x86_64 ✓`** — baris
    `MYTUNNEL_DOMAIN="${MYTUNNEL_DOMAIN:-$(cat /etc/mytunnel/domain.txt 2>/dev/null)}"`
    gagal karena `/etc/mytunnel/domain.txt` belum ada, dan `set -e` menghentikan installer
-   tanpa pesan. Gejala: prompt balik ke shell, tidak ada tahap `[1/13]`.
-2. **Kalau dipaksa lanjut** (file domain.txt dibuat manual berisi `-`): `xray.service`
-   gagal start (`/var/log/xray` permission denied, ownership `nobody:nogroup`),
-   nginx `mytunnel.conf` tidak dibuat (guard `die "Domain belum diisi"`), WS 502.
-
-Domain yang sudah terlanjur salah pasang bisa diganti lewat
-**menu → 6 FEATURES → 9 Change Domain VPS** (issue cert Let's Encrypt ulang,
-rollback otomatis kalau gagal). Tapi install pertama tetap harus pakai domain.
+   tanpa pesan. Kini pakai `|| true`.
+2. **`xray.service` gagal start** saat install tanpa domain (owner `/var/log/xray`
+   salah). Kini owner diambil dari `User=`/`Group=` unit asli.
 
 ## Menu
 
@@ -62,7 +73,9 @@ Bot dan LOGIN REPORT perlu token dari @BotFather dulu. Config-nya mode 600.
 |---|---|
 | OpenSSH / Dropbear | 444 / 90 |
 | TLS / None TLS / Any | 443,8443 / 80,8080 / 2082,2083,8880 |
-| Config | 81 |
+| UDPGW (badvpn) | 7300/udp publik |
+| SlowDNS | 53/udp + 5300/udp |
+| Config | 81 (hanya `myvpn-config.zip`; daftar direktori dimatikan) |
 
 Ubah angka di `/etc/mytunnel/config/ports.conf`, bukan di script.
 

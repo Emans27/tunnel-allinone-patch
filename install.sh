@@ -65,9 +65,9 @@ preflight() {
     *) _preflight_fail "OS '${OS:-?}' tidak didukung" "pakai Ubuntu 18/20/22/24 atau Debian 11/12" ;;
   esac
   case "${OS}-${VER}" in
-    ubuntu-18.04|ubuntu-20.04|ubuntu-22.04|ubuntu-24.04|debian-11|debian-12)
-      echo -e "  Versi: ${GREEN}${OS} ${VER} ✓${RESET}" ;;
-    *) _preflight_warn "Versi ${OS} ${VER} belum diuji resmi (disarankan Debian 12 / Ubuntu 22.04)" ;;
+    ubuntu-22.04|ubuntu-24.04|ubuntu-26.04|debian-12|debian-13)
+      echo -e "  Versi: ${GREEN}${OS} ${VER} didukung ✓${RESET}" ;;
+    *) _preflight_warn "Versi ${OS} ${VER} di luar matrix dukungan (Debian 12/13, Ubuntu 22.04/24.04/26.04)" ;;
   esac
 
   # 2. root (kecuali test mode MYTUNNEL_PREFIX)
@@ -178,7 +178,7 @@ while [[ $# -gt 0 ]]; do
     --brand=*) MYTUNNEL_BRAND="${1#*=}"; shift;;
     --yes|-y) AUTO_YES=1; MYTUNNEL_YES=1; shift;;
     --no-deps) NO_DEPS=1; shift;;
-    --help|-h) echo "Usage: bash install.sh [--domain example.com] [--brand \"My Brand\"] [--yes] [--no-deps]"; echo " Env: MYTUNNEL_DOMAIN, MYTUNNEL_BRAND, MYTUNNEL_EXPIRY=2099-12-31, MYTUNNEL_YES=1, MYTUNNEL_PREFIX=/tmp/test (test mode)"; echo " Copy-paste (non-interaktif): bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Emans27/tunnel-allinone/main/install.sh)\" --domain example.com --brand \"My Brand\" --yes"; echo " Interaktif: curl -fsSL -o install.sh https://raw.githubusercontent.com/Emans27/tunnel-allinone/main/install.sh && chmod +x install.sh && bash install.sh"; exit 0;;
+    --help|-h) echo "Usage: bash install.sh [--domain example.com] [--brand \"My Brand\"] [--yes] [--no-deps]"; echo " Env: MYTUNNEL_DOMAIN, MYTUNNEL_BRAND, MYTUNNEL_EXPIRY=2099-12-31, MYTUNNEL_YES=1, MYTUNNEL_PREFIX=/tmp/test (test mode)"; echo " Copy-paste (non-interaktif): bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Emans27/tunnel-allinone-patch/main/install.sh)\" --domain example.com --brand \"My Brand\" --yes"; echo " Interaktif: curl -fsSL -o install.sh https://raw.githubusercontent.com/Emans27/tunnel-allinone-patch/main/install.sh && chmod +x install.sh && bash install.sh"; exit 0;;
     *) echo -e "${YELLOW}Arg tidak dikenal: $1${RESET}" >&2; shift;;
   esac
 done
@@ -1111,7 +1111,7 @@ ssh_account_block() {
   printf '%-15s : %s\n' "UDP-Custom" "${UDP_CUSTOM_PORT:-}"
   printf '%-15s : %s\n' "OHP + SSH" "${OHP_SSH_PORT:-}"
   printf '%-15s : %s\n' "Squid Proxy" "${SQUID_PORT:-}"
-  printf '%-15s : %s\n' "UDPGW" "${UDPGW_PORT:-}"
+  printf '%-15s : %s\n' "UDPGW" "${UDPGW_PORT:-7300}(7300 public)"
   printf '%-15s : %s\n' "OpenVPN TCP" "${OPENVPN_TCP_PORT:-}"
   printf '%-15s : %s\n' "OpenVPN SSL" "${OPENVPN_SSL_PORT:-}"
   printf '%-15s : %s\n' "OpenVPN UDP" "${OPENVPN_UDP_PORT:-}"
@@ -5093,6 +5093,8 @@ setup_ufw() {
       printf "%s\n" "$_ports2" | tr ',' '\n' | sort -u | while read -r pr; do [ -n "$pr" ] && echo "allow $pr"; done > "$BASE/var/log/ufw-sim.log" 2>/dev/null || true
     chmod 644 "$BASE/var/log"/*.sim.log 2>/dev/null || true
     chmod 644 "$BASE/var/log/ufw-sim.log" 2>/dev/null || true
+      echo "allow 7300/udp" >> "$BASE/var/log/ufw-sim.log" 2>/dev/null || true
+      sort -u "$BASE/var/log/ufw-sim.log" -o "$BASE/var/log/ufw-sim.log" 2>/dev/null || true
       cat "$BASE/var/log/ufw-sim.log" 2>&1 | head -n 30 || true
       return 0
     fi
@@ -5137,7 +5139,10 @@ setup_ufw() {
     echo -e "${CYAN}  ufw allow $p/tcp${RESET}"
     ufw allow "$p/tcp" >/dev/null 2>&1 || ufw allow "$p" >/dev/null 2>&1 || true
   done
-  # allow udp untuk slowdns/ovpn udp jika perlu
+  # UDP yang WAJIB terbuka: 7300 (UDPGW/badvpn publik, HTTP Custom), 53+5300
+  # (SlowDNS), OPENVPN_UDP_PORT. Daftar port di ports.conf, tapi 7300 selalu
+  # dibuka karena wrapper udpgw memang bind 0.0.0.0:7300.
+  for _p in 7300; do ufw allow "$_p/udp" >/dev/null 2>&1 || true; done
   for var in SLOWDNS_PORT OPENVPN_UDP_PORT; do
     val="${!var}" 2>/dev/null || true; [ -z "${val+x}" ] && continue
     [ -z "$val" ] && continue
@@ -5953,10 +5958,53 @@ ensure_nginx_stream() {
   return 0
 }
 
+# Tambah repo resmi nginx.org (mainline) supaya apt menarik versi terbaru dengan
+# perbaikan CVE nginx 2026. Distro repo (Ubuntu 22.04) membekukan 1.18.0 yang rentan.
+add_nginx_official_repo() {
+  [ -n "$BASE" ] && return 0
+  local codename arch
+  codename=$(. /etc/os-release 2>/dev/null; echo "${VERSION_CODENAME:-}")
+  [ -z "$codename" ] && return 0
+  arch=$(dpkg --print-architecture 2>/dev/null || echo amd64)
+  mkdir -p /usr/share/keyrings 2>/dev/null || true
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --max-time 20 https://nginx.org/keys/nginx_signing.key 2>/dev/null | gpg --dearmor -o /usr/share/keyrings/nginx-archive-keyring.gpg 2>/dev/null || true
+  fi
+  if [ ! -s /usr/share/keyrings/nginx-archive-keyring.gpg ]; then
+    wget -qO- --timeout=20 https://nginx.org/keys/nginx_signing.key 2>/dev/null | gpg --dearmor -o /usr/share/keyrings/nginx-archive-keyring.gpg 2>/dev/null || true
+  fi
+  [ -s /usr/share/keyrings/nginx-archive-keyring.gpg ] || { echo -e "${YELLOW}Keyring nginx.org gagal diunduh - pakai repo distro${RESET}"; return 0; }
+  echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg arch=$arch] http://nginx.org/packages/${OS:-ubuntu} $codename nginx" > /etc/apt/sources.list.d/nginx.list 2>/dev/null || true
+  apt-get update -y >/dev/null 2>&1 || true
+}
+
+# Update nginx + seluruh komponen mytunnel saat script dipanggil ulang (install
+# di atas install lama = update). Juga tempat perbaikan CVE nginx 2026 otomatis.
+update_nginx_cve() {
+  [ -n "$BASE" ] && return 0
+  command -v apt-get >/dev/null 2>&1 || return 0
+  if command -v nginx >/dev/null 2>&1; then
+    local cur; cur=$(nginx -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+    echo -e "${CYAN}[nginx] Versi terpasang: $cur — cek update CVE...${RESET}"
+    add_nginx_official_repo
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade nginx libnginx-mod-stream 2>/dev/null \
+      || DEBIAN_FRONTEND=noninteractive apt-get install -y nginx 2>/dev/null || true
+    local new; new=$(nginx -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+    if [ "$cur" != "$new" ]; then
+      echo -e "${GREEN}[nginx] Upgrade $cur -> $new (patch CVE nginx 2026)${RESET}"
+      nginx -t 2>/dev/null && systemctl restart nginx 2>/dev/null || true
+      echo "[$(date '+%Y-%m-%d %H:%M:%S')] nginx upgraded $cur -> $new (CVE 2026)" >> "$LOG" 2>/dev/null || true
+    else
+      echo -e "${GREEN}[nginx] Sudah versi terbaru ($cur)${RESET}"
+    fi
+  fi
+}
+
 install_nginx() {
   if command -v nginx >/dev/null 2>&1; then
     echo -e "${GREEN}Nginx sudah terinstall: $(nginx -v 2>&1)${RESET}"
     ensure_nginx_stream || true
+    update_nginx_cve
     return 0
   fi
   if [ -n "$BASE" ]; then
@@ -5966,6 +6014,8 @@ install_nginx() {
   fi
   echo -e "${CYAN}Install nginx...${RESET}"
   apt-get update -y >/dev/null 2>&1 || true
+  # repo nginx.org lebih dulu: apt mengambil mainline terbaru (CVE 2026 terbarui)
+  add_nginx_official_repo
   apt-get install -y nginx libnginx-mod-stream >/dev/null 2>&1 || apt-get install -y nginx >/dev/null 2>&1 || die "Gagal install nginx" "Cek apt dan koneksi"
   ensure_nginx_stream || true
   echo -e "${GREEN}Nginx terinstall${RESET}"
@@ -6083,9 +6133,10 @@ location = /vmess {
   proxy_buffering off;
   proxy_send_timeout 3600s;
 }
+# Exact-match location only. Map /whatever to Xray's /vmess endpoint via proxy_pass URI;
+# avoid rewrite rules whose regex may accidentally match extra path variants.
 location = /whatever {
-  rewrite ^/whatever$ /vmess break;
-  proxy_pass http://127.0.0.1:10001;
+  proxy_pass http://127.0.0.1:10001/vmess;
   proxy_http_version 1.1;
   proxy_set_header Upgrade $http_upgrade;
   proxy_set_header Connection $connection_upgrade;
@@ -6322,17 +6373,22 @@ $https_listens
 }
 
 # Config zip (port $config_port) - myvpn-config.zip (OpenVPN Langkah 3)
+# Port ini hanya menyajikan SATU file. autoindex dimatikan: daftar isi
+# /var/www/html tidak boleh bocor (pernah aktif dan mengekspos seluruh direktori).
 server {
   listen $config_port;
   listen [::]:$config_port;
   server_name $domain vplay.iflix.com *.iflix.com _;
   root $_www_root;
+  # default: tutup semua selain file yang diizinkan
   location / {
-    autoindex on;
+    return 404;
   }
   location = /myvpn-config.zip {
     root $_www_root;
     add_header Content-Disposition 'attachment; filename="myvpn-config.zip"';
+    add_header X-Content-Type-Options nosniff always;
+    limit_except GET HEAD { deny all; }
   }
 }
 CFG_EOF
@@ -6466,8 +6522,11 @@ BNR
 }
 
 install_dropbear() {
-  if command -v dropbear >/dev/null 2>&1 || [ -x "${BASE}/usr/sbin/dropbear" ]; then
-    echo -e "${GREEN}Dropbear sudah terinstall${RESET}"
+  # Dropbear WAJIB 2019.78 (bukan 2020+/apt). v2020+ mengubah perilaku banner &
+  # format yang dipakai klien tunneling (HTTP Custom dkk). apt Ubuntu 22.04
+  # memberi 2020.81 -> tidak boleh dipakai. Build dari source resmi.
+  if [ -x /usr/sbin/dropbear ] && /usr/sbin/dropbear -V 2>&1 | grep -q 'v2019\.'; then
+    echo -e "${GREEN}Dropbear 2019 sudah terpasang: $(/usr/sbin/dropbear -V 2>&1 | head -1)${RESET}"
     return 0
   fi
   if [ -n "$BASE" ]; then
@@ -6480,10 +6539,69 @@ STUB
     chmod +x "${BASE}/usr/sbin/dropbear" 2>/dev/null || true
     return 0
   fi
-  echo -e "${CYAN}Install dropbear...${RESET}"
+  echo -e "${CYAN}Install Dropbear 2019.78 dari source...${RESET}"
   apt-get update -y >/dev/null 2>&1 || true
-  apt-get install -y dropbear >/dev/null 2>&1 || die "Gagal install dropbear" "Cek apt dan koneksi"
-  echo -e "${GREEN}Dropbear terinstall${RESET}"
+  apt-get install -y build-essential zlib1g-dev >/dev/null 2>&1 || true
+
+  # GCC 10+ default -fno-common: dropbear 2019 gagal link tanpa -fcommon.
+  local db_cflags=""
+  if gcc -dumpversion 2>/dev/null | cut -d. -f1 | grep -qE '^([1-9][0-9]+)$'; then db_cflags="-fcommon"; fi
+
+  local _dbtmp _ok=0
+  _dbtmp=$(mktemp -d) || die "mktemp gagal" "Cek /tmp"
+  local _m
+  for _m in "https://matt.ucc.asn.au/dropbear/releases" "https://dropbear.nl/mirror/releases"; do
+    if curl -fsSL --max-time 120 "$_m/dropbear-2019.78.tar.bz2" -o "$_dbtmp/db.tar.bz2" 2>/dev/null \
+       || wget -q -T 120 -O "$_dbtmp/db.tar.bz2" "$_m/dropbear-2019.78.tar.bz2" 2>/dev/null; then
+      local _got
+      _got=$(sha256sum "$_dbtmp/db.tar.bz2" 2>/dev/null | awk '{print $1}')
+      if [ "$_got" = "525965971272270995364a0eb01f35180d793182e63dd0b0c3eb0292291644a4" ]; then _ok=1; break; fi
+      echo -e "${YELLOW}Checksum mirror $_m tidak cocok, coba mirror lain${RESET}"
+    fi
+  done
+  [ "$_ok" = "1" ] || die "Unduh Dropbear 2019.78 gagal/checksum salah" "Cek koneksi ke matt.ucc.asn.au atau dropbear.nl"
+  tar -xjf "$_dbtmp/db.tar.bz2" -C "$_dbtmp" 2>/dev/null || die "Extract Dropbear gagal" "Cek arsip di $_dbtmp"
+  ( cd "$_dbtmp/dropbear-2019.78" \
+      && CFLAGS="${db_cflags:--O2}" ./configure --prefix=/usr/local --sysconfdir=/etc/dropbear >/dev/null 2>&1 \
+      && make -j"$(nproc)" PROGRAMS="dropbear dropbearkey dbclient" >/dev/null 2>&1 ) \
+      || die "Build Dropbear 2019.78 gagal" "Cek build-essential/gcc zlib1g-dev; coba manual di $_dbtmp"
+  [ -x "$_dbtmp/dropbear-2019.78/dropbear" ] || die "Binary dropbear tidak dihasilkan" "Cek $_dbtmp/dropbear-2019.78"
+
+  # Pasang binary; jangan timpa paket apt (init.d menunjuk /usr/sbin/dropbear).
+  install -m 755 "$_dbtmp/dropbear-2019.78/dropbear" /usr/local/sbin/dropbear-2019
+  install -m 755 "$_dbtmp/dropbear-2019.78/dropbearkey" /usr/local/bin/dropbearkey-2019
+  ln -sf /usr/local/sbin/dropbear-2019 /usr/local/sbin/dropbear
+  # Wrapper di /usr/sbin/dropbear (jalur init.d Debian/Ubuntu) supaya service
+  # benar-benar menjalankan 2019.78, bukan paket apt 2020.81.
+  if [ -f /usr/sbin/dropbear ] && [ ! -L /usr/sbin/dropbear ]; then
+    cp -a /usr/sbin/dropbear "/usr/sbin/dropbear.apt-$(date +%Y%m%d)" 2>/dev/null || true
+  fi
+  cat > /usr/sbin/dropbear <<'WRAP'
+#!/bin/sh
+exec /usr/local/sbin/dropbear-2019 "$@"
+WRAP
+  chmod 755 /usr/sbin/dropbear
+
+  # Host keys: 2019.78 hanya mendukung rsa/ecdsa/dss (TIDAK ada ed25519).
+  # Key ed25519 sisa paket 2020 tidak dipakai; dropbear 2019 cukup rsa+ecdsa.
+  mkdir -p /etc/dropbear 2>/dev/null || true
+  if [ ! -f /etc/dropbear/dropbear_rsa_host_key ]; then
+    /usr/local/bin/dropbearkey-2019 -t rsa -s 2048 -f /etc/dropbear/dropbear_rsa_host_key >/dev/null 2>&1 \
+      || die "Generate host key RSA gagal" "Entropi rendah? apt-get install -y haveged && systemctl start haveged"
+  fi
+  [ -f /etc/dropbear/dropbear_ecdsa_host_key ] \
+    || /usr/local/bin/dropbearkey-2019 -t ecdsa -f /etc/dropbear/dropbear_ecdsa_host_key >/dev/null 2>&1 || true
+  chmod 600 /etc/dropbear/dropbear_*_host_key 2>/dev/null || true
+
+  rm -rf "$_dbtmp" 2>/dev/null || true
+  hash -r 2>/dev/null || true
+  # Verifikasi lewat path absolut: `dropbear` di PATH bisa jadi binary paket apt.
+  local _dbver; _dbver=$(/usr/sbin/dropbear -V 2>&1 | head -1)
+  case "$_dbver" in
+    *2019.*) echo -e "${GREEN}Dropbear 2019.78 terpasang: $_dbver${RESET}" ;;
+    *) die "Dropbear di /usr/sbin/dropbear bukan 2019: $_dbver" "Cek wrapper /usr/sbin/dropbear -> /usr/local/sbin/dropbear-2019" ;;
+  esac
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] dropbear 2019.78 built from source (CFLAGS=${db_cflags:--O2})" >> "$LOG" 2>/dev/null || true
 }
 
 write_config() {
@@ -6501,11 +6619,16 @@ write_config() {
   [ -z "$dport" ] && dport="90"
   # backup
   [ -f "$DB_CONF" ] && cp -a "$DB_CONF" "$DB_CONF.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+  # PENTING: JANGAN tambahkan -s atau -g di sini.
+  #   -s = matikan SEMUA login password,  -g = matikan password login untuk root.
+  # Dropbear ini adalah pintu masuk akun tunneling (user/password buatan menu),
+  # jadi flag itu membuat port 90 menolak semua akun: klien hanya melihat
+  # "Permission denied (publickey)". Diverifikasi live di VPS.
   cat > "$DB_CONF" << CFG_EOF
-# mytunnel dropbear - managed by mytunnel
+# mytunnel dropbear - managed by mytunnel (password login WAJIB aktif)
 NO_START=0
 DROPBEAR_PORT=$dport
-DROPBEAR_EXTRA_ARGS="-b $banner_path -s -g"
+DROPBEAR_EXTRA_ARGS="-b $banner_path"
 DROPBEAR_BANNER="$banner_path"
 CFG_EOF
   chmod 644 "$DB_CONF" 2>/dev/null || true
@@ -6539,7 +6662,13 @@ validate_and_restart() {
   if ! systemctl is-active dropbear >/dev/null 2>&1 && ! pgrep dropbear >/dev/null 2>&1; then
     echo -e "${YELLOW}Dropbear belum aktif, cek: journalctl -u dropbear -n 20${RESET}"
   else
-    echo -e "${GREEN}Dropbear aktif (109,143)${RESET}"
+    echo -e "${GREEN}Dropbear aktif (port $dport)${RESET}"
+  fi
+  # Pastikan password auth TIDAK dimatikan: penanda "publickey" saja di respons
+  # berarti -s/-g aktif dan semua akun tunneling akan gagal login.
+  if pgrep -af dropbear | grep -qE '(^| )-[sg]( |$)'; then
+    echo -e "${RED}Peringatan: dropbear jalan dengan -s/-g -> login password mati.${RESET}"
+    echo -e "${YELLOW}Perbaiki: hapus flag itu di $DB_CONF lalu systemctl restart dropbear${RESET}"
   fi
   ss -tlnp 2>/dev/null | grep -E ":(109|143|22)" | head -n 10 || true
 }
@@ -7069,15 +7198,12 @@ BIN_DST(){
 }
 
 install_udpgw(){
-  local ports s e
-  # range was unused (sample ports only) - removed
+  local ports
   ports=$(_get_ports)
-  read -r s e <<< "$(_parse_range "$ports")"
-  echo -e "${CYAN}[udpgw] Setup badvpn-udpgw $s-$e (127.0.0.1 only)...${RESET}" | tee -a "$LOG" 2>/dev/null || true
+  echo -e "${CYAN}[udpgw] Setup badvpn-udpgw on public 0.0.0.0:7300 (HTTP Custom + compatible clients)...${RESET}" | tee -a "$LOG" 2>/dev/null || true
   echo -e "${YELLOW}Sumber: https://github.com/ambrop72/badvpn (official)${RESET}"
-  echo -e "${YELLOW}Build: cmake + make (https, checksum via git commit)${RESET}"
-  echo -e "${YELLOW}Listen: 127.0.0.1:$s - 127.0.0.1:$e (max 5 ports sample, bukan 500 sekaligus)${RESET}"
-  echo -e "${YELLOW}Catatan: Range penuh 7100-7600 butuh 501 proses, beban RAM tinggi. Default hanya 7100,7200,7300,7400,7500 (5 sample). Edit $PF atau wrapper untuk full.${RESET}"
+  echo -e "${YELLOW}UDP gateway: public UDP/7300; sample loopback listeners remain optional.${RESET}"
+  echo -e "${YELLOW}UDPGW_PORT tetap mendukung port lokal tambahan via $PF.${RESET}"
 
   local bin
   bin=$(BIN_DST)
@@ -7145,47 +7271,19 @@ STUB
   [ -n "$BASE" ] && wrapper="${BASE}/usr/local/bin/mytunnel-udpgw-wrapper.sh"
   mkdir -p "$(dirname "$wrapper")" 2>/dev/null || true
 
-  # parse ports - limit to 5 sample to avoid 501 processes
-  # If range >10, sample every ~100
-  local plist=()
-  if [ "$s" = "$e" ]; then plist=("$s")
-  elif [ "$s" = "7100" ] && [ "$e" = "7600" ]; then plist=(7100 7200 7300 7400 7500)
-  elif [ $((e - s)) -le 10 ]; then for ((p=s;p<=e;p++)); do plist+=("$p"); done
-  else
-    local step=$(((e - s)/4))
-    [ "$step" -lt 1 ] && step=1
-    for i in 0 1 2 3 4; do
-      local pp=$((s + i*step))
-      [ "$pp" -gt "$e" ] && pp="$e"
-      plist+=("$pp")
-    done
-    if [ "$s" -le 7300 ] && [ "$e" -ge 7300 ]; then
-      local has7300=0; for x in "${plist[@]}"; do [ "$x" = "7300" ] && has7300=1; done
-      [ "$has7300" = "0" ] && plist[2]=7300
-      mapfile -t plist < <(printf "%s\n" "${plist[@]}" | sort -nu)
-    fi
-  fi
-  echo -e "${CYAN}Port sample untuk systemd: ${plist[*]}${RESET}"
+  # HTTP Custom and similar clients connect directly to server UDP/7300.
+  # Expose only one gateway process; avoid 501-process range and unintended UDP exposure.
+  local plist=(7300)
+  echo -e "${CYAN}Public UDPGW listener: 0.0.0.0:7300${RESET}"
 
   cat > "$wrapper" <<WR_EOF
 #!/bin/bash
-# mytunnel udpgw wrapper - spawn badvpn per port
-# Generated $(date) - range $ports sample ${plist[*]}
+# mytunnel udpgw wrapper - single public badvpn udpgw on UDP/7300
+# Generated $(date) - PUBLIC listener 0.0.0.0:7300 (HTTP Custom / badvpn clients)
 set -e
 BIN="$bin"
-PIDS=""
-trap 'kill \$PIDS 2>/dev/null; exit 0' TERM INT
-for p in ${plist[*]}; do
-  # collision check: if port already in use, fallback p+1
-  if command -v ss >/dev/null 2>&1 && ss -ulnp 2>/dev/null | grep -q ":\$p " ; then
-    echo "Port \$p sudah pakai, coba \$((p+1))" >&2
-    p=\$((p+1))
-  fi
-  "\$BIN" --listen-addr 127.0.0.1:\$p --max-clients 512 --max-connections-for-client 8 >/dev/null 2>&1 &
-  PIDS="\$PIDS \$!"
-  echo "udpgw 127.0.0.1:\$p pid \$!" >&2
-done
-wait
+# --listen-addr 0.0.0.0:7300 wajib publik: klien HTTP Custom menembak UDP/7300 langsung.
+exec "\$BIN" --listen-addr 0.0.0.0:7300 --max-clients 512 --max-connections-for-client 8 --udp-mtu 65507
 WR_EOF
   chmod +x "$wrapper" 2>/dev/null || true
   echo -e "${GREEN}Wrapper: $wrapper${RESET}"
@@ -7195,7 +7293,7 @@ WR_EOF
   mkdir -p "$(dirname "$svc")" 2>/dev/null || true
   cat > "$svc" <<SVC_EOF
 [Unit]
-Description=mytunnel UDPGW (badvpn-udpgw $ports -> sample ${plist[*]})
+Description=mytunnel UDPGW (badvpn-udpgw public UDP/7300)
 After=network.target
 
 [Service]
@@ -7204,6 +7302,8 @@ ExecStart=$wrapper
 Restart=always
 RestartSec=3
 LimitNOFILE=65535
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target
@@ -7211,10 +7311,23 @@ SVC_EOF
   chmod 644 "$svc" 2>/dev/null || true
   echo -e "${GREEN}Service: $svc${RESET}"
 
+  # UFW: UDP/7300 publik (HTTP Custom & klien badvpn menembak langsung)
+  if [ -z "$BASE" ]; then
+    if command -v ufw >/dev/null 2>&1; then
+      ufw allow 7300/udp >/dev/null 2>&1 || true
+      echo -e "${GREEN}UFW: 7300/udp dibuka${RESET}"
+    fi
+  else
+    echo -e "${YELLOW}[TEST MODE] UFW 7300/udp simulasi${RESET}"
+    mkdir -p "${BASE}/var/log" 2>/dev/null || true
+    echo "allow 7300/udp" >> "${BASE}/var/log/ufw-sim.log" 2>/dev/null || true
+    sort -u "${BASE}/var/log/ufw-sim.log" -o "${BASE}/var/log/ufw-sim.log" 2>/dev/null || true
+  fi
+
   if [ -n "$BASE" ]; then
     echo -e "${YELLOW}[TEST MODE] Simulasi enable udpgw${RESET}"
     mkdir -p "${BASE}/var/log" 2>/dev/null || true
-    echo "udpgw sim $ports sample ${plist[*]}" > "${BASE}/var/log/udpgw-sim.log" 2>/dev/null || true
+    echo "udpgw sim: public UDP/7300" > "${BASE}/var/log/udpgw-sim.log" 2>/dev/null || true
     chmod 644 "$BASE/var/log/udpgw-sim.log" 2>/dev/null || true; chmod 644 "${BASE}/var/log/udpgw-sim.log" 2>/dev/null || true
   else
     systemctl daemon-reload 2>/dev/null || true
@@ -7222,13 +7335,13 @@ SVC_EOF
     systemctl restart mytunnel-udpgw 2>/dev/null || true
     sleep 1
     if systemctl is-active mytunnel-udpgw >/dev/null 2>&1 || pgrep -f badvpn-udpgw >/dev/null 2>&1; then
-      echo -e "${GREEN}UDPGW aktif (127.0.0.1:${plist[*]})${RESET}"
+      echo -e "${GREEN}UDPGW aktif (publik 0.0.0.0:7300)${RESET}"
     else
       echo -e "${YELLOW}UDPGW belum aktif, cek: journalctl -u mytunnel-udpgw -n 20${RESET}"
     fi
-    ss -ulnp 2>/dev/null | grep -E "127.0.0.1:(${plist[0]}|${plist[1]:-})" | head -n 10 || true
+    ss -ulnp 2>/dev/null | grep -E ":7300 " | head -n 5 || true
   fi
-  echo -e "${GREEN}[udpgw] Selesai: 127.0.0.1:$ports (sample ${plist[*]})${RESET}" | tee -a "$LOG" 2>/dev/null || true
+  echo -e "${GREEN}[udpgw] Selesai: UDP/7300 publik (HTTP Custom ready)${RESET}" | tee -a "$LOG" 2>/dev/null || true
 }
 
 uninstall_udpgw(){
@@ -11933,7 +12046,10 @@ __EMBED_EOF__
 chmod 755 "$ETC/advanced/routing.sh"
 cat > "$ETC/advanced/slowdns.sh" << '__EMBED_EOF__'
 #!/bin/bash
-# mytunnel advanced/slowdns.sh - dnstt/slowdns tunneling DNS->SSH lokal
+# mytunnel advanced/slowdns.sh - SlowDNS (DNS tunneling -> SSH) multi-record
+# Mendukung record TXT / NULL / CNAME / NS / MX / SRV di sisi domain.
+# Server binary: vaydns fork (multi-record + fallback), diunduh dari GitHub Releases
+# repo tunnel-allinone-patch (tag dnstt-multi) dengan verifikasi SHA256.
 # shellcheck disable=SC1091,SC1090,SC2154
 MYTUNNEL_PREFIX="${MYTUNNEL_PREFIX:-}"
 if [ -n "$MYTUNNEL_PREFIX" ]; then BASE="$MYTUNNEL_PREFIX/etc/mytunnel"; else BASE="/etc/mytunnel"; fi
@@ -11943,304 +12059,482 @@ CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}
 BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
 CONF="$BASE/config/slowdns.conf"
 KEYDIR="$BASE/slowdns"
-DNSTT_URL="https://github.com/buraksezer/dnstt/releases/latest/download/dnstt-server_linux_amd64"
-DNSTT_SHA=""
-DNSTT_BIN="${MYTUNNEL_PREFIX:-}/usr/local/bin/dnstt-server"
-[ -z "$MYTUNNEL_PREFIX" ] && DNSTT_BIN="/usr/local/bin/dnstt-server"
 SERVICE="mytunnel-slowdns"
 
-slowdns_status(){
-  echo -e "${CYAN}=== SLOWDNS STATUS ===${RESET}"
+# Binary multi-record (vaydns fork). Fallback URL bila release tak terjangkau.
+SLOWDNS_REL="https://github.com/Emans27/tunnel-allinone-patch/releases/download/dnstt-multi"
+SHA_AMD64="5bcbb9843ab112e195a41ab69334e05c9591675be7067a93e85ce28b3972e58f"
+SHA_ARM64="8755e68cc7a0b725da78d811f90670c7042375ad5a9abef400bf6c1c8af959b"
+
+# daftar tipe record yang didukung + cara aplikasi klien memakainya
+RECORD_TYPES="TXT NULL CNAME NS MX SRV"
+
+_slowdns_arch(){
+  case "$(uname -m)" in
+    x86_64|amd64) echo "amd64" ;;
+    aarch64|arm64) echo "arm64" ;;
+    *) echo "" ;;
+  esac
+}
+
+_slowdns_url(){
+  local a; a=$(_slowdns_arch)
+  [ -z "$a" ] && return 1
+  echo "$SLOWDNS_REL/slowdns-server-linux-$a"
+}
+
+_slowdns_sha(){
+  case "$(_slowdns_arch)" in
+    amd64) echo "$SHA_AMD64" ;;
+    arm64) echo "$SHA_ARM64" ;;
+    *) echo "" ;;
+  esac
+}
+
+# path binary: hormati MYTUNNEL_PREFIX untuk test mode
+_slowdns_bin(){
+  if [ -n "$MYTUNNEL_PREFIX" ]; then echo "${MYTUNNEL_PREFIX}/usr/local/bin/slowdns-server"; else echo "/usr/local/bin/slowdns-server"; fi
+}
+
+_slowdns_log(){ command -v ah_log >/dev/null 2>&1 && ah_log "$1" || echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "${BASE}/var/log/mytunnel.log" 2>/dev/null || true; }
+_slowdns_ip(){ command -v ah_get_ip >/dev/null 2>&1 && ah_get_ip 2>/dev/null | tr -d '\n' || curl -s4 --max-time 5 https://api.ipify.org 2>/dev/null | tr -d '\n' || echo "-"; }
+
+# validasi nama domain NS (dipakai saat instal & ganti NS)
+_slowdns_valid_ns(){
+  local d="$1"
+  [ -z "$d" ] && return 1
+  case "$d" in *[!a-zA-Z0-9.-]*) return 1 ;; esac
+  case "$d" in .*|*..*|*.) return 1 ;; esac
+  [[ "$d" == *.* ]] || return 1
+  echo "$d" | grep -qE '^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$'
+}
+
+_slowdns_read_conf(){
+  NS_DOMAIN=""; SSH_PORT="22"; RTYPE="TXT"; FALLBACK=""; MTU="1232"; DNSTT_COMPAT="1"; RESOLVED_BAK=""
   if [ -f "$CONF" ]; then
     # shellcheck disable=SC1090
     . "$CONF" 2>/dev/null || true
-    echo -e "NS domain : ${NS_DOMAIN:-(-)}"
-    echo -e "SSH target: 127.0.0.1:${SSH_PORT:-22}"
-    if [ -f "$KEYDIR/server.key" ]; then echo -e "Privkey  : ${GREEN}$KEYDIR/server.key (600)${RESET}"; ls -l "$KEYDIR/server.key" 2>/dev/null | awk '{print "  "$1" "$9}' | sed 's/^/  /'; else echo -e "Privkey  : ${YELLOW}belum ada${RESET}"; fi
-    if [ -f "$KEYDIR/server.pub" ]; then echo -e "Pubkey   : $(cat "$KEYDIR/server.pub" 2>/dev/null | cut -c1-60)"; else echo -e "Pubkey   : ${YELLOW}belum ada${RESET}"; fi
-  else
-    echo -e "Config  : ${YELLOW}belum ada ($CONF)${RESET}"
   fi
-  echo -e "Binary  : $( [ -x "$DNSTT_BIN" ] && echo "${GREEN}$DNSTT_BIN OK${RESET}" || echo "${YELLOW}belum terinstall${RESET}")"
+}
+
+# bangun argumen ExecStart sesuai tipe record & opsi aktif.
+# Binary vaydns memakai flag -record-type (nilai huruf kecil: txt,null,cname,a,aaaa,mx,ns,srv,caa)
+# dan -domain/-upstream sebagai FLAG (bukan positional). -dnstt-compat ON = format wire
+# lama agar kompatibel aplikasi SlowDNS/DNSTT yang beredar.
+_slowdns_args(){
+  _slowdns_read_conf
+  local rt; rt=$(printf '%s' "${RTYPE:-TXT}" | tr '[:upper:]' '[:lower:]')
+  local args="-udp :5300 -privkey-file $KEYDIR/server.key -domain ${NS_DOMAIN:-} -upstream 127.0.0.1:${SSH_PORT:-22} -record-type $rt"
+  [ -n "${FALLBACK:-}" ] && args="$args -fallback $FALLBACK"
+  [ "${DNSTT_COMPAT:-1}" = "1" ] && args="$args -dnstt-compat"
+  [ -n "${MTU:-}" ] && args="$args -mtu ${MTU}"
+  echo "$args"
+}
+
+slowdns_status(){
+  _slowdns_read_conf
+  echo -e "${CYAN}=== SLOWDNS STATUS ===${RESET}"
+  echo -e "NS domain : ${NS_DOMAIN:-(-)}"
+  echo -e "Tipe record: ${RTYPE:-TXT}  (didukung: ${RECORD_TYPES})"
+  echo -e "SSH target: 127.0.0.1:${SSH_PORT:-22}"
+  [ -n "${FALLBACK:-}" ] && echo -e "Fallback  : ${FALLBACK}"
+  local bin; bin=$(_slowdns_bin)
+  if [ -f "$KEYDIR/server.key" ]; then
+    echo -e "Privkey   : ${GREEN}$KEYDIR/server.key${RESET} $(stat -c '%a %U:%G' "$KEYDIR/server.key" 2>/dev/null)"
+  else
+    echo -e "Privkey   : ${YELLOW}belum ada${RESET}"
+  fi
+  if [ -f "$KEYDIR/server.pub" ]; then
+    echo -e "Pubkey    : ${GREEN}$(cut -c1-64 "$KEYDIR/server.pub" 2>/dev/null)${RESET}"
+  else
+    echo -e "Pubkey    : ${YELLOW}belum ada${RESET}"
+  fi
+  echo -e "Binary    : $( [ -x "$bin" ] && echo "${GREEN}$bin OK${RESET}" || echo "${YELLOW}belum terinstall${RESET}")"
   local st
   if [ -n "$MYTUNNEL_PREFIX" ]; then
-    if [ -f "$BASE/var/log/${SERVICE}.sim" ] || [ -f "$BASE/etc/systemd/system/${SERVICE}.service" ]; then st="ON (sim)"; else st="OFF"; fi
+    [ -f "$BASE/etc/systemd/system/${SERVICE}.service" ] && st="ON (sim)" || st="OFF"
   else
-    if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then st="ON"; else st="OFF"; fi
+    systemctl is-active --quiet "$SERVICE" 2>/dev/null && st="ON" || st="OFF"
   fi
-  echo -e "Service $SERVICE : $st"
-  echo -e "Port 53 : $(ss -tulnp 2>/dev/null | grep -q ':53 ' && echo "LISTEN" || echo "- (ss tidak ada/test mode)")"
-  if [ -f "/etc/systemd/resolved.conf" ]; then
-    echo -e "resolved.conf stub: $(grep -E 'DNSStubListener' /etc/systemd/resolved.conf 2>/dev/null | head -1 || echo "-")"
+  echo -e "Service   : $st"
+  echo -e "Port 53   : $(ss -tulnp 2>/dev/null | grep -qE ':53 ' && echo LISTEN || echo '-')"
+  if [ -f /etc/systemd/resolved.conf ]; then
+    echo -e "resolved stub: $(grep -E 'DNSStubListener' /etc/systemd/resolved.conf 2>/dev/null | head -1 || echo '-')"
   fi
-  echo ""
-  echo -e "${DIM}DNS yang harus dibuat:${RESET}"
-  echo -e "  1. A record: ns.<domain> -> $(ah_get_ip 2>/dev/null | tr -d '\n' | cut -c1-20) (IP VPS)"
-  echo -e "  2. NS record: tunnel.<domain> -> ns.<domain>"
-  echo -e "  Contoh jika domain example.com dan NS ns.example.com:"
-  echo -e "    ns.example.com.  A   <IP-VPS>"
-  echo -e "    tunnel.example.com. NS ns.example.com."
+  echo
+  _slowdns_dns_help
+}
+
+# petunjuk record DNS sesuai tipe yang dipilih
+_slowdns_dns_help(){
+  local ip ns rt
+  ip=$(_slowdns_ip)
+  ns="${NS_DOMAIN:-ns.domain-kamu.com}"
+  rt="${RTYPE:-TXT}"
+  echo -e "${DIM}Record DNS yang harus dibuat di panel domain:${RESET}"
+  echo -e "  1. A     ns.<domain>      -> ${ip}   (IP VPS)"
+  echo -e "  2. NS    tunnel.<domain>  -> ${ns}."
+  echo
+  case "$rt" in
+    TXT)
+      echo -e "  Tipe tunnel: ${GREEN}TXT${RESET} (kompatibel semua klien SlowDNS)"
+      echo -e "  ${DIM}Klien: SlowDNS mode TXT / default. Payload dibungkus TXT base64.${RESET}" ;;
+    NULL)
+      echo -e "  Tipe tunnel: ${GREEN}NULL${RESET} (payload biner, overhead paling kecil)"
+      echo -e "  ${DIM}Klien: SlowDNS dengan pilihan Type = NULL. Paling cepat untuk DNS murni.${RESET}" ;;
+    CNAME)
+      echo -e "  Tipe tunnel: ${GREEN}CNAME${RESET}"
+      echo -e "  ${DIM}Buat juga CNAME: t.<domain> -> ${ns}. (klien menembak CNAME, server jawab sama).${RESET}" ;;
+    NS)
+      echo -e "  Tipe tunnel: ${GREEN}NS${RESET}"
+      echo -e "  ${DIM}Paling tahan filtering DNS: query ke subdomain apa pun diarahkan ke NS kita.${RESET}" ;;
+    MX)
+      echo -e "  Tipe tunnel: ${GREEN}MX${RESET}"
+      echo -e "  ${DIM}Buat MX: <domain> -> ${ns}. (prioritas 10). Berguna saat TXT/NULL diblokir.${RESET}" ;;
+    SRV)
+      echo -e "  Tipe tunnel: ${GREEN}SRV${RESET}"
+      echo -e "  ${DIM}Buat SRV: _tunnel._udp.<domain> -> 10 10 53 ${ns}. (jalur alternatif saat blokir ketat).${RESET}" ;;
+  esac
+  echo
+  echo -e "  ${DIM}Aplikasi klien yang punya pilihan Type (Automatic/TXT/NULL/dll) otomatis cocok.${RESET}"
+}
+
+_slowdns_download(){
+  local bin url sha
+  bin=$(_slowdns_bin); url=$(_slowdns_url); sha=$(_slowdns_sha)
+  if [ -z "$url" ]; then
+    echo -e "${RED}Arsitektur $(uname -m) belum didukung binary SlowDNS${RESET}"
+    return 1
+  fi
+  if [ -n "$MYTUNNEL_PREFIX" ]; then
+    echo -e "${YELLOW}[TEST MODE] Simulasi unduh $url -> $bin${RESET}"
+    printf '#!/bin/bash\necho slowdns-sim\n' > "$bin" 2>/dev/null || true
+    chmod 755 "$bin" 2>/dev/null || true
+    return 0
+  fi
+  mkdir -p "$(dirname "$bin")" 2>/dev/null || true
+  local tmp; tmp=$(mktemp 2>/dev/null || echo "/tmp/slowdns.$$")
+  if ! curl -fsSL --max-time 120 "$url" -o "$tmp" 2>/dev/null && ! wget -qO "$tmp" "$url" 2>/dev/null; then
+    rm -f "$tmp" 2>/dev/null || true
+    echo -e "${RED}Unduh SlowDNS server gagal: $url${RESET}"
+    echo -e "${YELLOW}Cek koneksi VPS ke github.com / releases${RESET}"
+    return 1
+  fi
+  local got; got=$(sha256sum "$tmp" 2>/dev/null | awk '{print $1}')
+  if [ -n "$sha" ] && [ "$got" != "$sha" ]; then
+    rm -f "$tmp" 2>/dev/null || true
+    echo -e "${RED}Checksum SlowDNS tidak cocok — unduhan dibatalkan${RESET}"
+    echo -e "${DIM}harap: $sha${RESET}"
+    echo -e "${DIM}dapat: $got${RESET}"
+    return 1
+  fi
+  install -m 755 "$tmp" "$bin" 2>/dev/null || { mv -f "$tmp" "$bin" && chmod 755 "$bin"; }
+  rm -f "$tmp" 2>/dev/null || true
+  echo -e "${GREEN}SlowDNS server terpasang: $bin${RESET}"
+  return 0
 }
 
 slowdns_install(){
-  echo -e "${CYAN}=== Install SlowDNS (dnstt) ===${RESET}"
-  echo -e "${DIM}Sumber resmi: $DNSTT_URL${RESET}"
-  echo -e "${DIM}Checksum: $DNSTT_SHA (verifikasi manual setelah download)${RESET}"
-  echo -e "${DIM}Port target SSH: 127.0.0.1:22 (atau 127.0.0.1:10004 via sshws)${RESET}"
-  local ns ssh_port
+  echo -e "${CYAN}=== Install SlowDNS (multi-record) ===${RESET}"
+  echo -e "${DIM}Binary: vaydns multi-record, unduh dari release repo patch + SHA256${RESET}"
+  local ns ssh_port rtype fb
   echo -ne "NS domain (contoh ns.example.com): "
   read -r ns
   ns=$(echo "$ns" | tr -d ' \n' | tr '[:upper:]' '[:lower:]')
   [ -z "$ns" ] && { echo "Batal"; return; }
-  if ! ah_validate_ns_domain "$ns"; then echo -e "${RED}Format NS domain invalid${RESET}"; return 1; fi
+  if ! _slowdns_valid_ns "$ns"; then echo -e "${RED}Format NS domain tidak valid${RESET}"; return 1; fi
   echo -ne "Port SSH target [22]: "
   read -r ssh_port
   ssh_port=$(echo "$ssh_port" | tr -dc '0-9' | head -c 5)
   [ -z "$ssh_port" ] && ssh_port=22
-  if [ "$ssh_port" -lt 1 ] || [ "$ssh_port" -gt 65535 ] 2>/dev/null; then echo -e "${RED}Port 1-65535${RESET}"; return 1; fi
-  mkdir -p "$KEYDIR" "$(dirname "$DNSTT_BIN")" "$(dirname "$CONF")" 2>/dev/null || true
+  if [ "$ssh_port" -lt 1 ] || [ "$ssh_port" -gt 65535 ] 2>/dev/null; then echo -e "${RED}Port harus 1-65535${RESET}"; return 1; fi
+  echo -e "Tipe record: 1)TXT 2)NULL 3)CNAME 4)NS 5)MX 6)SRV  [1]"
+  read -rp " Pilih [1-6]: " _rt
+  case "${_rt:-1}" in
+    2) rtype="NULL" ;; 3) rtype="CNAME" ;; 4) rtype="NS" ;;
+    5) rtype="MX" ;; 6) rtype="SRV" ;; *) rtype="TXT" ;;
+  esac
+  echo -ne "Fallback UDP (opsional, contoh 127.0.0.1:7300 untuk lokal atau IP_VPS:7300 untuk koneksi dari luar jaringan, Enter kosongkan): "
+  read -r fb
+  fb=$(echo "$fb" | tr -d ' \n')
+  case "$fb" in *:*) : ;; *) fb="" ;; esac
 
-  # handle port 53 conflict: systemd-resolved stub
+  mkdir -p "$KEYDIR" "$(dirname "$(_slowdns_bin)")" "$(dirname "$CONF")" 2>/dev/null || true
+
+  # port 53: matikan stub systemd-resolved bila aktif
   local resolved_bak=""
-  if [ -f "/etc/systemd/resolved.conf" ] && grep -q "DNSStubListener=yes" /etc/systemd/resolved.conf 2>/dev/null; then
-    echo -e "${YELLOW}systemd-resolved stub aktif, backup dan nonaktifkan...${RESET}"
+  if [ -f /etc/systemd/resolved.conf ] && grep -qE '^\s*#?\s*DNSStubListener=yes' /etc/systemd/resolved.conf 2>/dev/null; then
+    echo -e "${YELLOW}systemd-resolved stub aktif, menonaktifkan agar port 53 bebas...${RESET}"
     if [ -z "$MYTUNNEL_PREFIX" ]; then
       resolved_bak="/etc/systemd/resolved.conf.bak-$(date +%Y%m%d-%H%M%S)"
       cp -a /etc/systemd/resolved.conf "$resolved_bak" 2>/dev/null || true
-      # backup juga via advanced_helpers
-      ah_backup_cfg /etc/systemd/resolved.conf >/dev/null 2>&1 || true
       mkdir -p /etc/systemd/resolved.conf.d 2>/dev/null || true
-      # disable stub safely, keep DNS VPS via /etc/resolv.conf fallback
-      if grep -q "^\[Resolve\]" /etc/systemd/resolved.conf 2>/dev/null; then
+      if grep -q '^\[Resolve\]' /etc/systemd/resolved.conf 2>/dev/null; then
         sed -i 's/^#*DNSStubListener=.*/DNSStubListener=no/' /etc/systemd/resolved.conf 2>/dev/null || echo "DNSStubListener=no" >> /etc/systemd/resolved.conf
       else
         printf '\n[Resolve]\nDNSStubListener=no\n' >> /etc/systemd/resolved.conf 2>/dev/null || true
       fi
-      # ensure resolv.conf still has DNS
-      if [ -f /etc/resolv.conf ] && ! grep -q "nameserver" /etc/resolv.conf 2>/dev/null; then
-        echo "nameserver 1.1.1.1" >> /etc/resolv.conf 2>/dev/null || true
-        echo "nameserver 8.8.8.8" >> /etc/resolv.conf 2>/dev/null || true
+      if [ -f /etc/resolv.conf ] && ! grep -q nameserver /etc/resolv.conf 2>/dev/null; then
+        printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' >> /etc/resolv.conf 2>/dev/null || true
       fi
       systemctl restart systemd-resolved 2>/dev/null || true
-      echo -e "${GREEN}systemd-resolved stub dinonaktifkan (backup $resolved_bak)${RESET}"
-      ah_log "slowdns disable resolved stub backup $resolved_bak"
+      echo -e "${GREEN}stub dinonaktifkan (backup $resolved_bak)${RESET}"
+      _slowdns_log "slowdns: resolved stub off, backup $resolved_bak"
     else
       echo -e "${YELLOW}[TEST MODE] Simulasi nonaktifkan stub${RESET}"
     fi
   fi
 
-  # download dnstt-server
+  _slowdns_download || { [ -n "$resolved_bak" ] && [ -f "$resolved_bak" ] && cp -a "$resolved_bak" /etc/systemd/resolved.conf 2>/dev/null; return 1; }
+
+  echo -e "${CYAN}Generate keypair...${RESET}"
+  local bin; bin=$(_slowdns_bin)
   if [ -n "$MYTUNNEL_PREFIX" ]; then
-    echo -e "${YELLOW}[TEST MODE] Simulasi download dnstt-server -> $DNSTT_BIN${RESET}"
-    printf '#!/bin/bash\necho dnstt-sim\n' > "$DNSTT_BIN" 2>/dev/null || true
-    chmod 755 "$DNSTT_BIN" 2>/dev/null || true
+    head -c 32 /dev/urandom | base64 | tr -d '\n' | head -c 64 > "$KEYDIR/server.key" 2>/dev/null || true
+    head -c 32 /dev/urandom | base64 | tr -d '\n' | head -c 64 > "$KEYDIR/server.pub" 2>/dev/null || true
   else
-    if ! ah_download_https "$DNSTT_URL" "$DNSTT_BIN" "$DNSTT_SHA" 2>&1; then
-      echo -e "${RED}Download dnstt gagal${RESET}"
-      # rollback resolved if changed
-      [ -n "$resolved_bak" ] && [ -f "$resolved_bak" ] && cp -a "$resolved_bak" /etc/systemd/resolved.conf 2>/dev/null || true
+    if ! "$bin" -gen-key -privkey-file "$KEYDIR/server.key" -pubkey-file "$KEYDIR/server.pub" >/dev/null 2>&1; then
+      echo -e "${RED}Generate keypair gagal${RESET}"
       return 1
     fi
-    chmod 755 "$DNSTT_BIN" 2>/dev/null || true
   fi
-
-  # generate keypair
-  echo -e "${CYAN}Generate keypair...${RESET}"
-  if [ -n "$MYTUNNEL_PREFIX" ]; then
-    # sim keys
-    head -c 32 /dev/urandom 2>/dev/null | base64 | tr -d '\n' | head -c 44 > "$KEYDIR/server.key" 2>/dev/null || echo "sim-privkey-$(date +%s)" > "$KEYDIR/server.key"
-    head -c 32 /dev/urandom 2>/dev/null | base64 | tr -d '\n' | head -c 44 > "$KEYDIR/server.pub" 2>/dev/null || echo "sim-pubkey-$(date +%s)" > "$KEYDIR/server.pub"
-    chmod 600 "$KEYDIR/server.key" 2>/dev/null || true
-    chmod 644 "$KEYDIR/server.pub" 2>/dev/null || true
-  else
-    if [ -x "$DNSTT_BIN" ] && "$DNSTT_BIN" -gen-key -privkey-file "$KEYDIR/server.key" -pubkey-file "$KEYDIR/server.pub" 2>&1 | head -n 10; then
-      chmod 600 "$KEYDIR/server.key" 2>/dev/null || true
-      chmod 644 "$KEYDIR/server.pub" 2>/dev/null || true
-    else
-      # fallback openssl
-      openssl rand -base64 32 2>/dev/null | tr -d '\n' > "$KEYDIR/server.key" 2>/dev/null || head -c 32 /dev/urandom | base64 > "$KEYDIR/server.key" 2>/dev/null || true
-      chmod 600 "$KEYDIR/server.key" 2>/dev/null || true
-      cp "$KEYDIR/server.key" "$KEYDIR/server.pub" 2>/dev/null || true
-      chmod 644 "$KEYDIR/server.pub" 2>/dev/null || true
-    fi
-  fi
+  chmod 600 "$KEYDIR/server.key" 2>/dev/null || true
+  chmod 644 "$KEYDIR/server.pub" 2>/dev/null || true
 
   cat > "$CONF" <<CFEOF
 NS_DOMAIN="$ns"
 SSH_PORT="$ssh_port"
+RTYPE="$rtype"
+FALLBACK="$fb"
+MTU="1232"
+DNSTT_COMPAT="0"
 RESOLVED_BAK="$resolved_bak"
 CFEOF
   chmod 644 "$CONF" 2>/dev/null || true
-  echo -e "${GREEN}Keypair dibuat:${RESET}"
-  echo -e "  priv: $KEYDIR/server.key (600)"
-  echo -e "  pub : $(cat "$KEYDIR/server.pub" 2>/dev/null | cut -c1-60)"
-  echo -e "${CYAN}NS domain: $ns -> SSH 127.0.0.1:$ssh_port${RESET}"
-  echo -e "${YELLOW}Jangan lupa buat record DNS:${RESET}"
-  echo -e "  ${ns}.  A  $(ah_get_ip 2>/dev/null | tr -d '\n' | cut -c1-20)"
-  # ufw allow 53 + 5300 (Langkah 4: 5300 real listen)
-  if [ -z "$MYTUNNEL_PREFIX" ]; then
-    if command -v ufw >/dev/null 2>&1; then ufw allow 53/udp 2>/dev/null || true; ufw allow 53/tcp 2>/dev/null || true; ufw allow 5300/udp 2>/dev/null || true; echo -e "${GREEN}UFW 53/udp,53/tcp,5300/udp allow${RESET}"; fi
-  else
-    echo -e "${YELLOW}[TEST MODE] UFW allow 53+5300 sim${RESET}"
-  fi
-  ah_log "slowdns installed ns $ns port $ssh_port"
 
-  # enable service
+  local pubkey; pubkey=$(cut -c1-64 "$KEYDIR/server.pub" 2>/dev/null)
+  echo -e "${GREEN}Keypair dibuat${RESET}"
+  echo -e "  priv: $KEYDIR/server.key (600)"
+  echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
+  echo -e "${BLUE}│${RESET} ${BOLD}PUBLIC KEY (masukkan di aplikasi SlowDNS klien)${RESET}         ${BLUE}│${RESET}"
+  echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
+  echo -e "  ${GREEN}${pubkey}${RESET}"
+  echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
+  echo -e "  ${DIM}Tempel key di atas ke kolom Public Key / PUBKEY aplikasi klien.${RESET}"
+  echo -e "${CYAN}NS domain: $ns -> SSH 127.0.0.1:$ssh_port  [tipe ${rtype}]${RESET}"
+
+  if [ -z "$MYTUNNEL_PREFIX" ]; then
+    if command -v ufw >/dev/null 2>&1; then
+      ufw allow 53/udp >/dev/null 2>&1 || true
+      ufw allow 53/tcp >/dev/null 2>&1 || true
+      ufw allow 5300/udp >/dev/null 2>&1 || true
+      echo -e "${GREEN}UFW: 53/udp, 53/tcp, 5300/udp dibuka${RESET}"
+    fi
+  else
+    echo -e "${YELLOW}[TEST MODE] UFW 53 + 5300 simulasi${RESET}"
+  fi
+  _slowdns_log "slowdns: install ns $ns port $ssh_port tipe $rtype"
+  _slowdns_dns_help
   slowdns_enable
 }
 
 _slowdns_setup_redirect(){
-  # Redirect UDP 53 -> 5300 via iptables/nftables (exclusive mode: 53 for SlowDNS, not OpenVPN DNS)
-  # Backup not needed - idempotent delete then add
-  local do53="53" to="5300"
+  local to="5300"
   if [ -n "$MYTUNNEL_PREFIX" ]; then
-    echo "$do53 -> $to" > "$BASE/var/log/slowdns-redirect.sim" 2>/dev/null || true
-    echo -e "${DIM}[TEST MODE] iptables REDIRECT $do53 -> $to sim${RESET}"
+    echo "53 -> $to" > "$BASE/var/log/slowdns-redirect.sim" 2>/dev/null || true
+    echo -e "${DIM}[TEST MODE] REDIRECT 53 -> $to sim${RESET}"
     return 0
   fi
-  # Remove old redirect if exists (idempotent)
-  iptables -t nat -D PREROUTING -p udp --dport $do53 -j REDIRECT --to-port $to 2>/dev/null || true
-  iptables -t nat -D OUTPUT -o lo -p udp --dport $do53 -j REDIRECT --to-port $to 2>/dev/null || true
-  # nft fallback
-  if command -v nft >/dev/null 2>&1; then
-    nft delete rule ip nat PREROUTING udp dport $do53 redirect to :$to 2>/dev/null || true
-  fi
-  # Add redirect
+  iptables -t nat -D PREROUTING -p udp --dport 53 -j REDIRECT --to-port $to 2>/dev/null || true
+  iptables -t nat -D OUTPUT -o lo -p udp --dport 53 -j REDIRECT --to-port $to 2>/dev/null || true
+  if command -v nft >/dev/null 2>&1; then nft delete rule ip nat PREROUTING udp dport 53 redirect to :$to 2>/dev/null || true; fi
   if command -v iptables >/dev/null 2>&1; then
-    iptables -t nat -A PREROUTING -p udp --dport $do53 -j REDIRECT --to-port $to 2>/dev/null || true
-    iptables -t nat -A OUTPUT -o lo -p udp --dport $do53 -j REDIRECT --to-port $to 2>/dev/null || true
-    echo -e "${GREEN}iptables REDIRECT UDP $do53 -> $to${RESET}"
-    # persist netfilter if available
-    if command -v netfilter-persistent >/dev/null 2>&1; then netfilter-persistent save 2>/dev/null || true; fi
+    iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-port $to 2>/dev/null || true
+    iptables -t nat -A OUTPUT -o lo -p udp --dport 53 -j REDIRECT --to-port $to 2>/dev/null || true
+    echo -e "${GREEN}iptables: UDP 53 -> $to${RESET}"
+    if command -v netfilter-persistent >/dev/null 2>&1; then netfilter-persistent save >/dev/null 2>&1 || true; fi
     if command -v iptables-save >/dev/null 2>&1 && [ -d /etc/iptables ]; then iptables-save > /etc/iptables/rules.v4 2>/dev/null || true; fi
   elif command -v nft >/dev/null 2>&1; then
-    nft add rule ip nat PREROUTING udp dport $do53 redirect to :$to 2>/dev/null || true
-    echo -e "${GREEN}nft REDIRECT UDP $do53 -> $to${RESET}"
+    nft add rule ip nat PREROUTING udp dport 53 redirect to :$to 2>/dev/null || true
+    echo -e "${GREEN}nft: UDP 53 -> $to${RESET}"
   else
-    echo -e "${YELLOW}iptables/nft tidak ada, SlowDNS hanya listen :$to tanpa redirect${RESET}"
+    echo -e "${YELLOW}iptables/nft tidak ada — SlowDNS hanya listen :$to${RESET}"
   fi
-  # Check conflict with OpenVPN DNS 53
-  if ss -ulnp 2>/dev/null | grep -q ":53 " && ! ss -ulnp 2>/dev/null | grep -q "mytunnel-slowdns"; then
-    echo -e "${YELLOW}Warning: port 53 sudah dipakai (mungkin OpenVPN DNS 53). Uninstall OpenVPN DNS atau SlowDNS terlebih dahulu.${RESET}"
+  if ss -ulnp 2>/dev/null | grep -q ':53 ' && ! ss -ulnp 2>/dev/null | grep -q slowdns; then
+    echo -e "${YELLOW}Peringatan: port 53 dipakai proses lain${RESET}"
   fi
-  ah_log "slowdns redirect $do53->$to"
+  _slowdns_log "slowdns: redirect 53->$to"
 }
 
 _slowdns_remove_redirect(){
-  local do53="53" to="5300"
+  local to="5300"
   if [ -n "$MYTUNNEL_PREFIX" ]; then
     rm -f "$BASE/var/log/slowdns-redirect.sim" 2>/dev/null || true
-    echo -e "${DIM}[TEST MODE] hapus REDIRECT $do53 -> $to sim${RESET}"
     return 0
   fi
-  iptables -t nat -D PREROUTING -p udp --dport $do53 -j REDIRECT --to-port $to 2>/dev/null || true
-  iptables -t nat -D OUTPUT -o lo -p udp --dport $do53 -j REDIRECT --to-port $to 2>/dev/null || true
-  if command -v nft >/dev/null 2>&1; then nft delete rule ip nat PREROUTING udp dport $do53 redirect to :$to 2>/dev/null || true; fi
-  echo -e "${YELLOW}iptables REDIRECT $do53 -> $to dihapus${RESET}"
-  ah_log "slowdns remove redirect $do53->$to"
+  iptables -t nat -D PREROUTING -p udp --dport 53 -j REDIRECT --to-port $to 2>/dev/null || true
+  iptables -t nat -D OUTPUT -o lo -p udp --dport 53 -j REDIRECT --to-port $to 2>/dev/null || true
+  if command -v nft >/dev/null 2>&1; then nft delete rule ip nat PREROUTING udp dport 53 redirect to :$to 2>/dev/null || true; fi
+  echo -e "${YELLOW}REDIRECT 53 -> $to dihapus${RESET}"
+  _slowdns_log "slowdns: remove redirect"
 }
 
-slowdns_enable(){
-  [ -f "$CONF" ] || { echo -e "${RED}Config belum ada, install dulu${RESET}"; return 1; }
-  # shellcheck disable=SC1090
-  . "$CONF" 2>/dev/null || true
-  local ns="${NS_DOMAIN:-}" port="${SSH_PORT:-22}"
-  # Langkah 4: dnstt listen :5300, 53 redirect via iptables (jaga 80/443 exclusive, 53 mutual exclusion)
-  if [ -n "$MYTUNNEL_PREFIX" ]; then
-    mkdir -p "$BASE/etc/systemd/system" "$BASE/var/log" 2>/dev/null || true
-    cat > "$BASE/etc/systemd/system/${SERVICE}.service" <<SVCEOF
+_slowdns_write_unit(){
+  local args svc
+  args=$(_slowdns_args)
+  if [ -n "$MYTUNNEL_PREFIX" ]; then svc="$BASE/etc/systemd/system/${SERVICE}.service"; else svc="/etc/systemd/system/${SERVICE}.service"; fi
+  mkdir -p "$(dirname "$svc")" 2>/dev/null || true
+  cat > "$svc" <<SVCEOF
 [Unit]
-Description=mytunnel SlowDNS (dnstt)
+Description=mytunnel SlowDNS (multi-record DNS tunnel)
 After=network.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=$DNSTT_BIN -udp :5300 -privkey-file $KEYDIR/server.key $ns 127.0.0.1:$port
+ExecStart=$(_slowdns_bin) $args
 Restart=always
 RestartSec=5
+LimitNOFILE=65535
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target
 SVCEOF
+  chmod 644 "$svc" 2>/dev/null || true
+  echo "$svc"
+}
+
+slowdns_enable(){
+  [ -f "$CONF" ] || { echo -e "${RED}Config belum ada, install dulu${RESET}"; return 1; }
+  local svc
+  svc=$(_slowdns_write_unit)
+  if [ -n "$MYTUNNEL_PREFIX" ]; then
     touch "$BASE/var/log/${SERVICE}.sim" 2>/dev/null || true
-    _slowdns_setup_redirect
-    echo -e "${GREEN}[TEST MODE] Service $SERVICE dibuat (sim) :5300 -> 53 redirect${RESET}"
-    ah_log "slowdns enable sim $ns :5300"
+    _slowdns_setup_redirect >/dev/null 2>&1
+    echo -e "${GREEN}[TEST MODE] unit $svc dibuat${RESET}"
+    _slowdns_log "slowdns: enable sim"
     return 0
   fi
-  cat > "/etc/systemd/system/${SERVICE}.service" <<SVCEOF2
-[Unit]
-Description=mytunnel SlowDNS (dnstt)
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=$DNSTT_BIN -udp :5300 -privkey-file $KEYDIR/server.key $ns 127.0.0.1:$port
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-SVCEOF2
-  chmod 644 "/etc/systemd/system/${SERVICE}.service" 2>/dev/null || true
   systemctl daemon-reload 2>/dev/null || true
-  systemctl enable --now "$SERVICE" 2>/dev/null || systemctl restart "$SERVICE" 2>/dev/null || true
-  echo -e "${GREEN}Service $SERVICE diaktifkan${RESET}"
-  ah_log "slowdns enable $ns"
+  systemctl enable "$SERVICE" >/dev/null 2>&1 || true
+  systemctl restart "$SERVICE" 2>/dev/null || true
+  sleep 1
+  if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
+    echo -e "${GREEN}Service $SERVICE aktif${RESET}"
+    _slowdns_setup_redirect
+    ss -ulnp 2>/dev/null | grep -E ':5300 ' | head -3 || true
+  else
+    echo -e "${RED}Service $SERVICE gagal start${RESET}"
+    echo -e "${DIM}journalctl -u $SERVICE -n 30 --no-pager${RESET}"
+    journalctl -u "$SERVICE" -n 10 --no-pager 2>/dev/null | tail -10 || true
+    return 1
+  fi
+  _slowdns_log "slowdns: enable"
 }
 
 slowdns_disable(){
   if [ -n "$MYTUNNEL_PREFIX" ]; then
     rm -f "$BASE/var/log/${SERVICE}.sim" 2>/dev/null || true
-    _slowdns_remove_redirect
-    echo -e "${YELLOW}[TEST MODE] Service $SERVICE dimatikan (sim)${RESET}"
-    ah_log "slowdns disable sim"
+    _slowdns_remove_redirect >/dev/null 2>&1
+    echo -e "${YELLOW}[TEST MODE] service dimatikan (sim)${RESET}"
     return 0
   fi
-  systemctl disable --now "$SERVICE" 2>/dev/null || systemctl stop "$SERVICE" 2>/dev/null || true
+  systemctl disable --now "$SERVICE" >/dev/null 2>&1 || systemctl stop "$SERVICE" >/dev/null 2>&1 || true
   _slowdns_remove_redirect
   echo -e "${YELLOW}Service $SERVICE dimatikan${RESET}"
-  ah_log "slowdns disable"
+  _slowdns_log "slowdns: disable"
+}
+
+# ganti NS domain (nama nameserver) tanpa install ulang; keypair tetap
+slowdns_change_ns(){
+  [ -f "$CONF" ] || { echo -e "${RED}SlowDNS belum terinstall${RESET}"; return 1; }
+  _slowdns_read_conf
+  echo -e "${CYAN}=== Ganti Nameserver SlowDNS ===${RESET}"
+  echo -e "NS sekarang : ${NS_DOMAIN:-( - )}"
+  echo -e "Tipe record : ${RTYPE:-TXT}"
+  echo -ne "NS domain baru (Enter = batal): "
+  local ns; read -r ns
+  ns=$(echo "$ns" | tr -d ' \n' | tr '[:upper:]' '[:lower:]')
+  [ -z "$ns" ] && { echo "Batal"; return; }
+  if ! _slowdns_valid_ns "$ns"; then echo -e "${RED}Format NS domain tidak valid${RESET}"; return 1; fi
+  local bak="$CONF.bak-$(date +%Y%m%d-%H%M%S)"
+  cp -a "$CONF" "$bak" 2>/dev/null || true
+  sed -i "s|^NS_DOMAIN=.*|NS_DOMAIN=\"$ns\"|" "$CONF" 2>/dev/null || \
+    { grep -v '^NS_DOMAIN=' "$CONF" > "$CONF.tmp" && printf 'NS_DOMAIN="%s"\n' "$ns" >> "$CONF.tmp" && mv "$CONF.tmp" "$CONF"; }
+  chmod 644 "$CONF" 2>/dev/null || true
+  _slowdns_log "slowdns: NS diganti ${NS_DOMAIN:-} -> $ns (backup $bak)"
+  echo -e "${GREEN}NS diganti ke: $ns${RESET}  (backup: $bak)"
+  # restart agar unit baru memakai domain baru
+  if [ -n "$MYTUNNEL_PREFIX" ]; then
+    _slowdns_write_unit >/dev/null 2>&1 || true
+    echo -e "${YELLOW}[TEST MODE] unit ditulis ulang${RESET}"
+  else
+    _slowdns_write_unit >/dev/null 2>&1 || true
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl restart "$SERVICE" >/dev/null 2>&1 || true
+    sleep 1
+    if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
+      echo -e "${GREEN}Service restarted OK${RESET}"
+    else
+      echo -e "${RED}Service gagal start — rollback config${RESET}"
+      cp -a "$bak" "$CONF" 2>/dev/null || true
+      _slowdns_write_unit >/dev/null 2>&1 || true
+      systemctl daemon-reload >/dev/null 2>&1 || true
+      systemctl restart "$SERVICE" >/dev/null 2>&1 || true
+      return 1
+    fi
+  fi
+  _slowdns_dns_help
+}
+
+# ganti tipe record saja (tanpa sentuh domain/keys)
+slowdns_change_rtype(){
+  [ -f "$CONF" ] || { echo -e "${RED}SlowDNS belum terinstall${RESET}"; return 1; }
+  _slowdns_read_conf
+  echo -e "Tipe sekarang: ${RTYPE:-TXT}"
+  echo -e "1)TXT 2)NULL 3)CNAME 4)NS 5)MX 6)SRV"
+  local c rtype
+  read -rp " Pilih [1-6]: " c
+  case "${c:-}" in
+    1) rtype="TXT" ;; 2) rtype="NULL" ;; 3) rtype="CNAME" ;;
+    4) rtype="NS" ;; 5) rtype="MX" ;; 6) rtype="SRV" ;;
+    *) echo "Batal"; return ;;
+  esac
+  sed -i "s|^RTYPE=.*|RTYPE=\"$rtype\"|" "$CONF" 2>/dev/null || true
+  _slowdns_log "slowdns: tipe record -> $rtype"
+  echo -e "${GREEN}Tipe record: $rtype${RESET}"
+  _slowdns_dns_help
 }
 
 slowdns_uninstall(){
   echo -ne "${YELLOW}Hapus SlowDNS + kembalikan resolver? [y/N]: ${RESET}"
   local a; read -r a; [[ "$a" =~ ^[Yy]$ ]] || { echo "Batal"; return; }
-  slowdns_disable 2>&1 || true
-  _slowdns_remove_redirect 2>&1 || true
-  # restore resolved.conf if backed up
-  local bak=""
-  if [ -f "$CONF" ]; then
-    # shellcheck disable=SC1090
-    . "$CONF" 2>/dev/null || true
-    bak="${RESOLVED_BAK:-}"
-  fi
+  slowdns_disable >/dev/null 2>&1 || true
+  _slowdns_remove_redirect >/dev/null 2>&1 || true
+  _slowdns_read_conf
+  local bak="${RESOLVED_BAK:-}"
   if [ -n "$bak" ] && [ -f "$bak" ] && [ -z "$MYTUNNEL_PREFIX" ]; then
     cp -a "$bak" /etc/systemd/resolved.conf 2>/dev/null || true
     systemctl restart systemd-resolved 2>/dev/null || true
     echo -e "${GREEN}Resolver dikembalikan dari $bak${RESET}"
   elif [ -z "$MYTUNNEL_PREFIX" ] && [ -f /etc/systemd/resolved.conf ]; then
-    # remove our override if no bak
     sed -i '/DNSStubListener=no/d' /etc/systemd/resolved.conf 2>/dev/null || true
     systemctl restart systemd-resolved 2>/dev/null || true
-  else
-    echo -e "${YELLOW}[TEST MODE] Resolver restore sim${RESET}"
   fi
-  if [ -n "$MYTUNNEL_PREFIX" ]; then
-    rm -f "$DNSTT_BIN" 2>/dev/null || true
-    rm -rf "$KEYDIR" 2>/dev/null || true
-    rm -f "$CONF" "$BASE/etc/systemd/system/${SERVICE}.service" 2>/dev/null || true
-    echo -e "${GREEN}[TEST MODE] Uninstall sim selesai${RESET}"
-    ah_log "slowdns uninstall sim"
-    return
-  fi
-  rm -f "$DNSTT_BIN" 2>/dev/null || true
+  local bin svc; bin=$(_slowdns_bin)
+  if [ -n "$MYTUNNEL_PREFIX" ]; then svc="$BASE/etc/systemd/system/${SERVICE}.service"; else svc="/etc/systemd/system/${SERVICE}.service"; fi
+  rm -f "$bin" "$svc" "$CONF" 2>/dev/null || true
   rm -rf "$KEYDIR" 2>/dev/null || true
-  rm -f "$CONF" "/etc/systemd/system/${SERVICE}.service" 2>/dev/null || true
-  systemctl daemon-reload 2>/dev/null || true
-  if command -v ufw >/dev/null 2>&1; then ufw delete allow 53/udp 2>/dev/null || true; ufw delete allow 53/tcp 2>/dev/null || true; fi
+  [ -z "$MYTUNNEL_PREFIX" ] && systemctl daemon-reload 2>/dev/null || true
+  if command -v ufw >/dev/null 2>&1; then
+    ufw delete allow 53/udp >/dev/null 2>&1 || true
+    ufw delete allow 53/tcp >/dev/null 2>&1 || true
+    ufw delete allow 5300/udp >/dev/null 2>&1 || true
+  fi
   echo -e "${GREEN}SlowDNS dihapus${RESET}"
-  ah_log "slowdns uninstall"
+  _slowdns_log "slowdns: uninstall"
 }
 
 while true; do
@@ -12249,32 +12543,36 @@ while true; do
   printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "SLOWDNS (DNS tunneling -> SSH)"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   if [ -f "$CONF" ]; then
-    # shellcheck disable=SC1090
-    . "$CONF" 2>/dev/null || true
-    printf "${BLUE}│${RESET} NS: %-52s ${BLUE}│${RESET}\n" "${NS_DOMAIN:-(-)}"
-    printf "${BLUE}│${RESET} SSH: 127.0.0.1:%-40s ${BLUE}│${RESET}\n" "${SSH_PORT:-22}"
-    if [ -f "$KEYDIR/server.pub" ]; then printf "${BLUE}│${RESET} Pub: %-52s ${BLUE}│${RESET}\n" "$(cat "$KEYDIR/server.pub" 2>/dev/null | cut -c1-52)"; fi
+    _slowdns_read_conf
+    printf "${BLUE}│${RESET} NS   : %-49s ${BLUE}│${RESET}\n" "${NS_DOMAIN:-(-)}"
+    printf "${BLUE}│${RESET} SSH  : 127.0.0.1:%-35s ${BLUE}│${RESET}\n" "${SSH_PORT:-22}"
+    printf "${BLUE}│${RESET} Tipe : %-49s ${BLUE}│${RESET}\n" "${RTYPE:-TXT} (TXT/NULL/CNAME/NS/MX/SRV)"
+    if [ -f "$KEYDIR/server.pub" ]; then printf "${BLUE}│${RESET} Pub  : %-49s ${BLUE}│${RESET}\n" "$(cut -c1-49 "$KEYDIR/server.pub" 2>/dev/null)"; fi
   else
     printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "Belum terinstall"
   fi
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
-  echo -e "${BLUE}│${RESET} 1.) Install & Setup (NS + keypair)                 ${BLUE}│${RESET}"
+  echo -e "${BLUE}│${RESET} 1.) Install & Setup (NS + keypair + tipe record)    ${BLUE}│${RESET}"
   echo -e "${BLUE}│${RESET} 2.) Cek Status & Info DNS                          ${BLUE}│${RESET}"
   echo -e "${BLUE}│${RESET} 3.) Aktifkan Service                               ${BLUE}│${RESET}"
   echo -e "${BLUE}│${RESET} 4.) Nonaktifkan Service                            ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 5.) Uninstall (kembalikan resolver)                ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 6.) Back                                           ${BLUE}│${RESET}"
+  echo -e "${BLUE}│${RESET} 5.) Ganti Nameserver (NS domain)                    ${BLUE}│${RESET}"
+  echo -e "${BLUE}│${RESET} 6.) Ganti Tipe Record (TXT/NULL/CNAME/NS/MX/SRV)   ${BLUE}│${RESET}"
+  echo -e "${BLUE}│${RESET} 7.) Uninstall (kembalikan resolver)                ${BLUE}│${RESET}"
+  echo -e "${BLUE}│${RESET} 8.) Back                                           ${BLUE}│${RESET}"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
-  echo -ne "${BOLD}Select [1-6]: ${RESET}"
+  echo -ne "${BOLD}Select [1-8]: ${RESET}"
   read -r c
   case "$c" in
-    1) slowdns_install; pause;;
-    2) slowdns_status; pause;;
-    3) slowdns_enable; pause;;
-    4) slowdns_disable; pause;;
-    5) slowdns_uninstall; pause;;
-    6|b|B|x|X) break;;
-    *) echo -e "${RED}Pilihan tidak valid${RESET}"; sleep 1;;
+    1) slowdns_install; pause ;;
+    2) slowdns_status; pause ;;
+    3) slowdns_enable; pause ;;
+    4) slowdns_disable; pause ;;
+    5) slowdns_change_ns; pause ;;
+    6) slowdns_change_rtype; pause ;;
+    7) slowdns_uninstall; pause ;;
+    8|b|B|x|X) break ;;
+    *) echo -e "${RED}Pilihan tidak valid${RESET}"; sleep 1 ;;
   esac
 done
 
@@ -13839,7 +14137,7 @@ pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 get_repo_url() {
   local u
   u=$(cat "$REPO_FILE" 2>/dev/null | head -1 | tr -d ' \n')
-  [ -z "$u" ] && u="https://raw.githubusercontent.com/Emans27/tunnel-allinone/main"
+  [ -z "$u" ] && u="https://raw.githubusercontent.com/Emans27/tunnel-allinone-patch/main"
   echo "$u" | tr -d ' \n'
 }
 
@@ -14305,15 +14603,186 @@ cat > "$ETC/config/dropbear_versions.txt" << '__EMBED_EOF__'
 __EMBED_EOF__
 chmod 644 "$ETC/config/dropbear_versions.txt"
 cat > "$ETC/config/version.txt" << '__EMBED_EOF__'
-v1.9.0
+v1.10.0
 __EMBED_EOF__
 chmod 644 "$ETC/config/version.txt"
 cat > "$ETC/config/repo.txt" << '__EMBED_EOF__'
-https://raw.githubusercontent.com/Emans27/tunnel-allinone/main
+https://raw.githubusercontent.com/Emans27/tunnel-allinone-patch/main
 __EMBED_EOF__
 chmod 644 "$ETC/config/repo.txt"
 cat > "$ETC/CHANGELOG.md" << '__EMBED_EOF__'
 # CHANGELOG
+## v1.10.0 — 2026-11-11 — Dropbear 2019.78 wajib, SlowDNS multi-record + public key, UDPGW publik 7300, nginx lebih aman
+
+### Dropbear WAJIB 2019.78 (dibangun dari source)
+`install_dropbear()` sebelumnya cuma `apt-get install -y dropbear` → di Ubuntu 22.04
+menghasilkan **2020.81**, padahal 2019 yang dipakai klien tunneling. Sekarang:
+- Unduh `dropbear-2019.78.tar.bz2` dari mirror resmi (`matt.ucc.asn.au` → fallback
+  `dropbear.nl`), **verifikasi SHA256**
+  (`525965971272270995364a0eb01f35180d793182e63dd0b0c3eb0292291644a4`).
+- Build dengan `-fcommon` bila GCC ≥ 10 (default `-fno-common` membuat link gagal).
+- Binary dipasang ke `/usr/local/sbin/dropbear-2019`; `/usr/sbin/dropbear` jadi
+  **wrapper** ke binary itu, karena init.d Debian/Ubuntu menunjuk jalur tersebut —
+  tanpa wrapper, service tetap menjalankan 2020.81 dari paket apt.
+- Host key RSA/ECDSA dibuat otomatis. Catatan: **ed25519 tidak ada di 2019.78**
+  (hanya rsa/dss/ecdsa) — jangan minta dropbearkey 2019 membuat ed25519, ia gagal.
+- Idempoten: kalau `/usr/sbin/dropbear -V` sudah `v2019.*`, build dilewati.
+- Verifikasi versi dilakukan lewat path absolut `/usr/sbin/dropbear`, bukan `dropbear`
+  dari PATH (PATH bisa menunjuk binary paket apt).
+
+### BUG KRITIS: login password Dropbear dimatikan `-s -g`
+`DROPBEAR_EXTRA_ARGS` lama berisi `-b <banner> -s -g`. Pada Dropbear:
+`-s` = matikan **semua** login password, `-g` = matikan password login untuk root
+→ praktis semua akun tunneling ditolak, klien cuma melihat
+`Permission denied (publickey)`. Sekarang flag itu dihapus (hanya `-b <banner>`),
+ditambah komentar peringatan di script dan pemeriksaan pasca-restart yang
+memunculkan error merah bila `-s`/`-g` muncul lagi.
+Diverifikasi live: user password di port 90 → `LOGIN_OK`.
+
+### SlowDNS multi-record + public key ditampilkan
+- Binary server = vaydns fork (multi-record + fallback) dari release repo ini
+  (tag `dnstt-multi`) dengan verifikasi SHA256 per arsitektur (amd64/arm64).
+- `-record-type` mendukung **TXT, NULL, CNAME, NS, MX, SRV** — bisa dipilih saat
+  instal dan panduan record DNS dicetak sesuai tipe. Aplikasi klien yang punya
+  pilihan Type (Automatic/TXT/NULL/…) langsung cocok.
+- Saat instal, **public key (64 hex) dicetak dalam blok menonjol** supaya bisa
+  ditempel ke kolom PUBKEY aplikasi klien; `SlowDNS → status` juga menampilkannya penuh.
+- Port 53 dibebaskan dari stub `systemd-resolved` dengan backup + rollback bila unduh gagal.
+
+### UDPGW publik di UDP/7300
+- Wrapper badvpn-udpgw sekarang **satu proses publik `0.0.0.0:7300`**
+  (`--udp-mtu 65507`), bukan 5 listener loopback — UDP & DNS (HTTP Custom, klien
+  badvpn) jalan lewat port ini.
+- `ufw allow 7300/udp` dipanggil di dua tempat: `install_udpgw()` dan `setup_ufw()`
+  (dulu firewall tidak pernah membuka 7300 → service aktif tapi klien tak bisa konek).
+
+### Nginx: update CVE otomatis + aturan lebih aman
+- `add_nginx_official_repo()` + `update_nginx_cve()`: repo resmi nginx.org
+  ditambahkan, lalu `apt-get install --only-upgrade nginx libnginx-mod-stream`.
+  Dijalankan setiap kali installer/auto-update dipanggil, jadi nginx distro yang
+  membeku (Ubuntu 22.04 = 1.18.0) ikut terbarui. `nginx -t` dulu sebelum restart.
+- **Port 81 tidak lagi `autoindex on`** (itu mengekspos seluruh isi `/var/www/html`).
+  Sekarang `location /` mengembalikan 404 dan hanya `/myvpn-config.zip` yang dilayani,
+  dengan `limit_except GET HEAD { deny all; }` + `X-Content-Type-Options nosniff`.
+- Location `/whatever` tidak lagi memakai `rewrite ^/whatever$ /vmess break;`;
+  pemetaan ke endpoint Xray dilakukan lewat URI di `proxy_pass`
+  (`proxy_pass http://127.0.0.1:10001/vmess;`). Exact-match location tetap, tanpa
+  regex yang bisa cocok ke varian path lain.
+
+### Matrix OS disamakan dengan dukungan nyata
+Preflight sekarang menerima **Debian 12/13 dan Ubuntu 22.04/24.04/26.04** (sebelumnya
+Ubuntu 18/20 + Debian 11/12). Versi di luar matrix hanya jadi peringatan.
+
+### Semua URL diarahkan ke repo `tunnel-allinone-patch`
+`--help`, banner instruksi, dan default `config/repo.txt` (dipakai Auto Update)
+menunjuk repo ini. Sebelumnya `repo.txt` menunjuk repo base yang tertinggal versi →
+auto-update akan "menurunkan" VPS kembali ke rilis lama.
+
+## v1.9.10 — 2026-11-11 — fix unit systemd xray-guard rusak + update-login-report gagal senyap
+
+
+### Bug C — install tanpa domain mati diam-diam (ditemukan di VPS live)
+
+Baris `MYTUNNEL_DOMAIN="${MYTUNNEL_DOMAIN:-$(cat /etc/mytunnel/domain.txt 2>/dev/null)}"`
+gagal saat `/etc/mytunnel/domain.txt` belum ada (VPS fresh) dan `set -e` mematikan
+installer tanpa pesan — gejala: prompt balik ke shell tepat setelah `Arch: x86_64 ✓`,
+tidak ada tahap `[1/13]`. Diperbaiki dengan `|| true` pada substitution.
+
+Dampak lanjutan bila dipaksa lewat (domain.txt diisi `-`): `xray.service` gagal start
+(`/var/log/xray` owner `nobody:nogroup` → permission denied saat buka `access.log`),
+nginx `mytunnel.conf` tak dibuat karena guard `die "Domain belum diisi"`, WS 502.
+**README kini menetapkan domain WAJIB diisi saat install.**
+
+### Bug A — unit systemd tanpa `[Unit]` / `[Install]`
+
+`mytunnel-xray-guard.service` dan `.timer` ditulis dari heredoc yang tidak
+mencantumkan header `[Unit]`, dan timer tidak punya `[Install]`. systemd
+menolak unit tanpa section valid → watchdog xray mati senyap (`cat >` sukses,
+tapi timer tidak pernah jalan). Diperbaiki di `install.sh` dan
+`xray-guard-install.sh`.
+
+### Bug B — `update-login-report.sh` hanya extract 3/6 file, exit 0
+
+Split heredoc memakai `"<<'__EMBED_EOF__'"` tanpa spasi, padahal sebagian blok
+ditulis `<< '__EMBED_EOF__'` → `config.conf`, `menu.sh`, `uninstall.sh`
+terlewat tanpa peringatan. Regex `cat >` juga tidak match path berkutip.
+Ditambah hard-fail bila jumlah file tidak sama dengan `path_map`.
+
+### Ikut diperbaiki
+
+- `.githooks/pre-commit`: pola PAT hanya `gh[pousr]_` → fine-grained
+  `github_pat_...` lolos. Diperluas.
+- `.githooks/pre-commit`: `verify.sh`, `update-login-report.sh`,
+  `xray-guard-install.sh` masuk daftar cek SHA256SUMS.
+- README: versi disinkronkan, entri SHA256SUMS 12, instruksi
+  `git config core.hooksPath .githooks` (hook tidak aktif bawaan).
+
+---
+
+
+## v1.9.9 — 2026-11-04 — fix xray gagal start: log dir salah owner (User=xray)
+
+### Fixed
+- **"✗ Service xray gagal start" di setiap install baru.** Installer resmi Xray
+  (XTLS/Xray-install versi sekarang) membuat systemd unit dengan
+  `User=xray`/`Group=xray` dan `/var/log/xray` mode **700 xray:xray**. Tapi
+  `setup/xray.sh` `write_config()` melakukan `chown nobody:nogroup` ke dir dan
+  file log itu — user `xray` jadi tidak bisa buka `access.log` sama sekali, dan
+  xray mati saat start:
+  `Failed to start: main: ... app/log: failed to initialize access logger >
+  open /var/log/xray/access.log: permission denied`.
+  (Reproduksi + verifikasi pesan error dilakukan dengan xray 1.8.24 asli.)
+  Sekarang owner log dir/file diambil dari unit asli (`User=`/`Group=`), fallback
+  `nobody` untuk unit lama.
+- **`validate_config()` tidak pernah bisa gagal**: `if ! xray run -test ... | tee`
+  — status pipeline = status `tee` (selalu 0), jadi config rusak lolos validasi
+  dan baru bunuh xray di `enable_service`. Diganti cek `PIPESTATUS[0]`
+  (diverifikasi: config rusak -> exit 23 sekarang terdeteksi).
+
+
+## v1.9.8 — 2026-11-04 — fix installer mati senyap setelah preflight (VPS baru)
+
+### Fixed
+- **Installer mati TANPA pesan error tepat setelah preflight** (gejala: prompt
+  balik ke shell segera setelah baris `Arch: x86_64 ✓`, tidak ada tahap
+  `[1/13]`). Penyebab: baris
+  `MYTUNNEL_DOMAIN="${MYTUNNEL_DOMAIN:-$(cat /etc/mytunnel/domain.txt 2>/dev/null)}"`
+  di bawah `set -e` — di VPS baru file itu belum ada, `cat` exit 1, status
+  assignment ikut 1, script mati. Ditambah `|| true` di dalam substitution.
+  Bug ini ada sejak base dan juga memengaruhi v1.9.7: fresh install
+  `MYTUNNEL_YES=1 bash install.sh` (tanpa `MYTUNNEL_DOMAIN`) tidak pernah
+  mencapai tahap apa pun. Diuji live mode prefix: install penuh exit 0,
+  `domain.txt` = `-`, cert self-signed CN=IP, nginx `server_name` IP,
+  10 inbounds xray, watchdog terpasang.
+
+
+## v1.9.7 — 2026-11-04 — domain boleh dilewati saat install + xray watchdog
+
+### Added
+- **Domain bisa dilewati saat install**: prompt `setup/domain.sh` menerima Enter
+  kosong -> `domain.txt` diisi `-`, install lanjut dengan cert self-signed
+  (CN=IP VPS) dan nginx `server_name` pakai IP. Non-interaktif: `MYTUNNEL_YES=1`
+  tanpa `MYTUNNEL_DOMAIN` (atau `MYTUNNEL_SKIP_DOMAIN=1`) langsung lewat tanpa
+  prompt. Domain asli dipasang belakangan lewat **menu -> 6 FEATURES -> 9 Change
+  Domain VPS** (`features/domain.sh`: issue cert LE domain baru, rollback
+  otomatis kalau cert/nginx gagal).
+- **Xray watchdog** (`setup/xray-guard.sh` + `mytunnel-xray-guard.timer`, cek
+  tiap 60 detik): bila xray tidak aktif, config diuji dengan `xray run -test`;
+  kalau rusak, backup valid terbaru di-restore (config rusak disimpan sebagai
+  `.broken-*`) lalu xray di-restart. Semua tindakan dicatat di
+  `/var/log/mytunnel.log` dengan prefix `xray-guard:`. Terpasang otomatis saat
+  install/reinstall (production only).
+
+### Fixed
+- **cert.sh `_log` tidak terdefinisi** -> `set -e` mematikan script (exit 127)
+  tepat di path fallback self-signed. Sekarang `_log` punya fallback lokal.
+- **cert.sh fallback ACME gagal pakai `$CERT_CRT`/`$CERT_KEY` yang tidak pernah
+  di-set** (fungsi hanya mendefinisikan `cert_crt`/`cert_key`), sehingga
+  `openssl -keyout ""` gagal -> `die "Self-signed ikut gagal dipasang"` ->
+  install mati di tahap [7/13] setiap kali Let's Encrypt gagal (rate limit 429,
+  DNS belum propagasi). Variabel diperbaiki ke `cert_crt`/`cert_key`.
+- **acme.sh email `admin@-`** saat domain belum diset -> diganti `example.com`.
+
 
 ## unreleased — preflight minim-error + verify.sh (gRPC 8444 sudah di rilis ini)
 
@@ -14387,66 +14856,6 @@ cat > "$ETC/CHANGELOG.md" << '__EMBED_EOF__'
   alih-alih flag `http2` pada `listen`.
 - Verifikasi live: WS `/vmess` `/vless` `/trojan` @443 = `101`; koneksi gRPC
   mendarat di `8444`; ALPN `h2`/`h2,http/1.1` -> `8444`, `http/1.1` -> `9443`.
-
-
-## v1.9.9 — 2026-11-04 — fix xray gagal start: log dir salah owner (User=xray)
-### Fixed
-- **"✗ Service xray gagal start" di setiap install baru.** Installer resmi Xray
-  (XTLS/Xray-install versi sekarang) membuat systemd unit dengan
-  `User=xray`/`Group=xray` dan `/var/log/xray` mode **700 xray:xray**. Tapi
-  `setup/xray.sh` `write_config()` melakukan `chown nobody:nogroup` ke dir dan
-  file log itu — user `xray` jadi tidak bisa buka `access.log` sama sekali, dan
-  xray mati saat start:
-  `Failed to start: main: ... app/log: failed to initialize access logger >
-  open /var/log/xray/access.log: permission denied`.
-  (Reproduksi + verifikasi pesan error dilakukan dengan xray 1.8.24 asli.)
-  Sekarang owner log dir/file diambil dari unit asli (`User=`/`Group=`), fallback
-  `nobody` untuk unit lama.
-- **`validate_config()` tidak pernah bisa gagal**: `if ! xray run -test ... | tee`
-  — status pipeline = status `tee` (selalu 0), jadi config rusak lolos validasi
-  dan baru bunuh xray di `enable_service`. Diganti cek `PIPESTATUS[0]`
-  (diverifikasi: config rusak -> exit 23 sekarang terdeteksi).
-
-
-## v1.9.8 — 2026-11-04 — fix installer mati senyap setelah preflight (VPS baru)
-### Fixed
-- **Installer mati TANPA pesan error tepat setelah preflight** (gejala: prompt
-  balik ke shell segera setelah baris `Arch: x86_64 ✓`, tidak ada tahap
-  `[1/13]`). Penyebab: baris
-  `MYTUNNEL_DOMAIN="${MYTUNNEL_DOMAIN:-$(cat /etc/mytunnel/domain.txt 2>/dev/null)}"`
-  di bawah `set -e` — di VPS baru file itu belum ada, `cat` exit 1, status
-  assignment ikut 1, script mati. Ditambah `|| true` di dalam substitution.
-  Bug ini ada sejak base dan juga memengaruhi v1.9.7: fresh install
-  `MYTUNNEL_YES=1 bash install.sh` (tanpa `MYTUNNEL_DOMAIN`) tidak pernah
-  mencapai tahap apa pun. Diuji live mode prefix: install penuh exit 0,
-  `domain.txt` = `-`, cert self-signed CN=IP, nginx `server_name` IP,
-  10 inbounds xray, watchdog terpasang.
-
-
-## v1.9.7 — 2026-11-04 — domain boleh dilewati saat install + xray watchdog
-### Added
-- **Domain bisa dilewati saat install**: prompt `setup/domain.sh` menerima Enter
-  kosong -> `domain.txt` diisi `-`, install lanjut dengan cert self-signed
-  (CN=IP VPS) dan nginx `server_name` pakai IP. Non-interaktif: cukup
-  `MYTUNNEL_YES=1` tanpa `MYTUNNEL_DOMAIN` (atau `MYTUNNEL_SKIP_DOMAIN=1`) —
-  prompt tidak muncul sama sekali. Domain asli dipasang belakangan lewat
-  **menu -> 6 FEATURES -> 9 Change Domain VPS** (`features/domain.sh`:
-  issue cert LE domain baru, rollback otomatis kalau cert/nginx gagal).
-- **Xray watchdog** (`setup/xray-guard.sh` + `mytunnel-xray-guard.timer`,
-  cek tiap 60 detik): bila xray tidak aktif, config diuji dengan
-  `xray run -test`; kalau rusak, backup valid terbaru di-restore (config rusak
-  disimpan sebagai `.broken-*`) lalu xray di-restart. Semua tindakan dicatat di
-  `/var/log/mytunnel.log` dengan prefix `xray-guard:`.
-
-### Fixed
-- **cert.sh `_log` tidak terdefinisi** -> `set -e` mematikan script (exit 127)
-  tepat di path fallback self-signed. Sekarang `_log` punya fallback lokal.
-- **cert.sh fallback ACME gagal pakai `$CERT_CRT`/`$CERT_KEY` yang tidak pernah
-  di-set** (fungsi hanya mendefinisikan `cert_crt`/`cert_key`), sehingga
-  `openssl -keyout ""` gagal -> `die "Self-signed ikut gagal dipasang"` ->
-  install mati di tahap [7/13] setiap kali Let's Encrypt gagal (rate limit 429,
-  DNS belum propagasi). Variabel diperbaiki ke `cert_crt`/`cert_key`.
-- **acme.sh email `admin@-`** saat domain belum diset -> diganti `example.com`.
 
 
 ## v1.9.6 — 2026-10-12 — fix stream module dynamic + cert 429 tidak lagi matiin install
@@ -14816,7 +15225,7 @@ Tidak memperbaiki tanpa menyelaraskan versi klien/server, jadi XHTTP dihapus.
 __EMBED_EOF__
 chmod 644 "$ETC/CHANGELOG.md"
 cat > "$ETC/VERSION" << '__EMBED_EOF__'
-v1.8.1
+v1.10.0
 __EMBED_EOF__
 chmod 644 "$ETC/VERSION"
 cat > "$ETC/menu/doctor.sh" << '__EMBED_EOF__'
@@ -16213,9 +16622,9 @@ echo -e "    ${CYAN}menu${RESET}  (atau ${CYAN}/usr/local/bin/menu${RESET}, ${CY
 echo -e "  ${BOLD}Update:${RESET}  ${CYAN}menu -> FEATURES -> Auto Update${RESET}  atau  ${CYAN}bash $ETC/features/autoupdate.sh${RESET}"
 echo -e "  ${BOLD}Uninstall:${RESET} ${CYAN}bash ${BASE}/uninstall.sh${RESET}  (ketik ${BOLD}hapus${RESET})"
 echo -e "  ${BOLD}Copy-paste ke VPS baru (satu baris):${RESET}"
-echo -e "    ${CYAN}bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Emans27/tunnel-allinone/main/install.sh)\" --domain <domain> --brand \"<Brand>\" --yes${RESET}"
+echo -e "    ${CYAN}bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Emans27/tunnel-allinone-patch/main/install.sh)\" --domain <domain> --brand \"<Brand>\" --yes${RESET}"
 echo -e "    ${DIM}Interaktif (tanya domain/brand sendiri):${RESET}"
-echo -e "    ${CYAN}curl -fsSL -o install.sh https://raw.githubusercontent.com/Emans27/tunnel-allinone/main/install.sh && chmod +x install.sh && bash install.sh${RESET}"
+echo -e "    ${CYAN}curl -fsSL -o install.sh https://raw.githubusercontent.com/Emans27/tunnel-allinone-patch/main/install.sh && chmod +x install.sh && bash install.sh${RESET}"
 echo -e "    ${DIM}Override expiry: MYTUNNEL_EXPIRY=2099-12-31 bash install.sh${RESET}"
 echo -e "    ${DIM}MYTUNNEL_DOMAIN=example.com MYTUNNEL_YES=1 bash install.sh  # non-interaktif${RESET}"
 echo ""
