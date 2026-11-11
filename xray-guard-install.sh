@@ -48,17 +48,20 @@ GUARD_EOF
 chmod 755 "$ETC/setup/xray-guard.sh"
 
 cat > /etc/systemd/system/mytunnel-xray-guard.service << 'SVCEOF'
-
+[Unit]
 Description=mytunnel Xray watchdog (restore config rusak + restart)
 After=xray.service
 
 [Service]
 Type=oneshot
 ExecStart=/etc/mytunnel/setup/xray-guard.sh
+
+[Install]
+WantedBy=multi-user.target
 SVCEOF
 
 cat > /etc/systemd/system/mytunnel-xray-guard.timer << 'TMREOF'
-
+[Unit]
 Description=mytunnel Xray watchdog timer (60s)
 
 [Timer]
@@ -66,7 +69,7 @@ OnBootSec=45
 OnUnitActiveSec=60
 AccuracySec=5s
 
-
+[Install]
 WantedBy=timers.target
 TMREOF
 

@@ -1,4 +1,45 @@
 # CHANGELOG
+## v1.9.10 — 2026-11-11 — fix unit systemd xray-guard rusak + update-login-report gagal senyap
+
+
+### Bug C — install tanpa domain mati diam-diam (ditemukan di VPS live)
+
+Baris `MYTUNNEL_DOMAIN="${MYTUNNEL_DOMAIN:-$(cat /etc/mytunnel/domain.txt 2>/dev/null)}"`
+gagal saat `/etc/mytunnel/domain.txt` belum ada (VPS fresh) dan `set -e` mematikan
+installer tanpa pesan — gejala: prompt balik ke shell tepat setelah `Arch: x86_64 ✓`,
+tidak ada tahap `[1/13]`. Diperbaiki dengan `|| true` pada substitution.
+
+Dampak lanjutan bila dipaksa lewat (domain.txt diisi `-`): `xray.service` gagal start
+(`/var/log/xray` owner `nobody:nogroup` → permission denied saat buka `access.log`),
+nginx `mytunnel.conf` tak dibuat karena guard `die "Domain belum diisi"`, WS 502.
+**README kini menetapkan domain WAJIB diisi saat install.**
+
+### Bug A — unit systemd tanpa `[Unit]` / `[Install]`
+
+`mytunnel-xray-guard.service` dan `.timer` ditulis dari heredoc yang tidak
+mencantumkan header `[Unit]`, dan timer tidak punya `[Install]`. systemd
+menolak unit tanpa section valid → watchdog xray mati senyap (`cat >` sukses,
+tapi timer tidak pernah jalan). Diperbaiki di `install.sh` dan
+`xray-guard-install.sh`.
+
+### Bug B — `update-login-report.sh` hanya extract 3/6 file, exit 0
+
+Split heredoc memakai `"<<'__EMBED_EOF__'"` tanpa spasi, padahal sebagian blok
+ditulis `<< '__EMBED_EOF__'` → `config.conf`, `menu.sh`, `uninstall.sh`
+terlewat tanpa peringatan. Regex `cat >` juga tidak match path berkutip.
+Ditambah hard-fail bila jumlah file tidak sama dengan `path_map`.
+
+### Ikut diperbaiki
+
+- `.githooks/pre-commit`: pola PAT hanya `gh[pousr]_` → fine-grained
+  `github_pat_...` lolos. Diperluas.
+- `.githooks/pre-commit`: `verify.sh`, `update-login-report.sh`,
+  `xray-guard-install.sh` masuk daftar cek SHA256SUMS.
+- README: versi disinkronkan, entri SHA256SUMS 12, instruksi
+  `git config core.hooksPath .githooks` (hook tidak aktif bawaan).
+
+---
+
 
 ## v1.9.9 — 2026-11-04 — fix xray gagal start: log dir salah owner (User=xray)
 

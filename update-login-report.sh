@@ -23,7 +23,7 @@ with open(installer) as f:
 
 # Split by login-report heredoc markers
 # Pattern: cat > "$VAR" <<'__EMBED_EOF__' ... __EMBED_EOF__
-parts = text.split("<<'__EMBED_EOF__'")
+HEREDOC_RE = re.compile(r"<< *'__EMBED_EOF__'")
 
 # Map variable names to target paths
 path_map = {
@@ -35,26 +35,30 @@ path_map = {
     '$LR_DIR/uninstall.sh': os.path.join(base, 'uninstall.sh'),
 }
 
-# Find which block corresponds to which file by looking at the cat > line before each heredoc
+# Walk every heredoc opener; nearest `cat > "..."` before it names the target.
 extracted = {}
-for i in range(1, len(parts), 2):
-    if i >= len(parts):
-        break
-    # Get the line before this heredoc opening
-    before = text[:text.find("<<'__EMBED_EOF__'", text.find(parts[i-1]) if i > 0 else 0)]
-    # Find the last cat > ... line
-    cat_lines = re.findall(r'cat > (\$\w+(?:/\S+)?)', before)
+openers = list(HEREDOC_RE.finditer(text))
+for n, m in enumerate(openers):
+    content_start = m.end()
+    content_end = openers[n + 1].start() if n + 1 < len(openers) else len(text)
+    closing = text.find('__EMBED_EOF__', content_start, content_end)
+    if closing == -1:
+        continue
+    block = text[content_start:closing]
+    block = block.rsplit('\n', 1)[0] if block.endswith('\n') else block
+    cat_lines = re.findall(r'cat > "([^"]+)"', text[:m.start()])
     if not cat_lines:
         continue
-    target_var = cat_lines[-1]
-    block = parts[i].split('__EMBED_EOF__')[0]
-    extracted[target_var] = block
+    extracted[cat_lines[-1]] = block
 
 # Write files
+written = 0
 for var, content in extracted.items():
     target = path_map.get(var)
     if not target:
-        print(f"[!] Skip unknown target: {var}")
+        # bukan blok login-report (installer menanam banyak file lain) — abaikan
+        if var.startswith('$LR'):
+            print(f"[!] Skip target login-report tak dikenal: {var}")
         continue
     
     os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -62,13 +66,18 @@ for var, content in extracted.items():
         f.write(content)
     
     # Set permissions
-    if 'config.conf' in target or 'uninstall.sh' in target:
+    if 'config.conf' in target:
         os.chmod(target, 0o600)
     else:
         os.chmod(target, 0o755)
     
+    written += 1
     print(f"[+] Updated: {target}")
 
+expected = len(path_map)
+if written != expected:
+    print(f"ERROR: hanya {written}/{expected} file login-report ter-extract dari {installer}", file=sys.stderr)
+    sys.exit(1)
 print("[+] Selesai. Restart service:")
 print("    systemctl daemon-reload && systemctl restart login-report.timer")
 PYEOF

@@ -9,7 +9,7 @@ report() { printf '  %s\n' "$1" >&2; fail=1; }
 
 # pola digabung: <deskripsi>|<regex>
 PATTERNS='bot_token (Telegram bot token)|\b[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}\b
-github_pat (GitHub PAT)|\bgh[pousr]_[A-Za-z0-9]{20,}\b
+github_pat (GitHub PAT)|(\bgh[pousr]_|\bgithub_pat_)[A-Za-z0-9]{20,}
 aws_key (AWS access key)|\bAKIA[0-9A-Z]{16}\b
 private_key (private key)|-----BEGIN [A-Z ]*PRIVATE KEY-----
 admin_chat_id (Telegram chat ID)|\bADMIN_ID\s*=\s*"?[0-9]{8,12}"?'
@@ -66,6 +66,9 @@ README.md
 ports.conf
 configure-final-443.sh
 LICENSE
+verify.sh
+update-login-report.sh
+xray-guard-install.sh
 SUMSEOF
     [ ${#_stale[@]} -eq 0 ] || report "SHA256SUMS basi: ${_stale[*]}"
 }
