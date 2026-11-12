@@ -1,5 +1,5 @@
 #!/bin/bash
-# mytunnel install.sh - SUNEK VPN v1.10.4 (TAHAP 1+2+3+4+5+6+8)
+# mytunnel install.sh - SUNEK VPN v1.10.5 (TAHAP 1+2+3+4+5+6+8)
 # Debian 11/12, Ubuntu 18/20/22/24 - disarankan Debian 12 / Ubuntu 22.04
 # Idempotent, testable via MYTUNNEL_PREFIX=... MYTUNNEL_DOMAIN=example.com bash install.sh --no-deps
 # Aman: wget -qO install.sh https://raw.githubusercontent.com/USER/REPO/main/install.sh && less install.sh && bash install.sh
@@ -986,7 +986,11 @@ ssh_create() {
     # useradd: -M no home, -s /bin/false, -e expiry+1 (system expiry tomorrow 00:00 = valid till 23:59:59 of expiry day)
     local _sys_exp
     _sys_exp=$(date -d "$expiry +1 day" +%Y-%m-%d 2>/dev/null || date -d "$expiry" +%Y-%m-%d 2>/dev/null || echo "$expiry")
-    if ! useradd -M -s /bin/false -e "$_sys_exp" "$user" 2>&1; then
+    # useradd -m (bukan -M): dropbear 2019 chdir ke home user setelah auth,
+    # home yang tidak ada -> "Error changing directory" -> koneksi langsung putus
+    # walau password benar (gejala: RC=1, log menunjukkan auth SUCCEEDED). 
+    # -m membuat home tersedia dan akun tetap -s /bin/false (tak bisa shell login).
+    if ! useradd -m -s /bin/false -e "$_sys_exp" "$user" 2>&1; then
       echo -e "${RED}Gagal useradd $user${RESET}" >&2; return 1
     fi
     if ! echo "$user:$pass" | chpasswd 2>&1; then
@@ -14725,7 +14729,7 @@ cat > "$ETC/config/dropbear_versions.txt" << '__EMBED_EOF__'
 __EMBED_EOF__
 chmod 644 "$ETC/config/dropbear_versions.txt"
 cat > "$ETC/config/version.txt" << '__EMBED_EOF__'
-v1.10.4
+v1.10.5
 __EMBED_EOF__
 chmod 644 "$ETC/config/version.txt"
 cat > "$ETC/config/repo.txt" << '__EMBED_EOF__'
@@ -15444,7 +15448,7 @@ Tidak memperbaiki tanpa menyelaraskan versi klien/server, jadi XHTTP dihapus.
 __EMBED_EOF__
 chmod 644 "$ETC/CHANGELOG.md"
 cat > "$ETC/VERSION" << '__EMBED_EOF__'
-v1.10.4
+v1.10.5
 __EMBED_EOF__
 chmod 644 "$ETC/VERSION"
 cat > "$ETC/menu/doctor.sh" << '__EMBED_EOF__'

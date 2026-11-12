@@ -1,3 +1,12 @@
+## v1.10.5 — 2026-11-12 — Akun tunneling bisa dipakai setelah auth: useradd -m, bukan -M
+
+`ssh_helpers.sh` membuat akun dengan `useradd -M` (tanpa home). Dropbear 2019
+`chdir` ke home user setelah auth; home tidak ada → "Error changing directory"
+→ koneksi langsung ditutup walau password benar (log: `Password auth succeeded`
+lalu `Exit: Error changing directory`). Ganti ke `useradd -m`: home dibuat,
+akun tetap `-s /bin/false` sehingga tidak bisa shell login, tapi dynamic/socks
+forward (yang dipakai klien tunnel) tetap hidup. Diverifikasi live: SOCKS5
+handshake `0500` dan HTTP 204 lewat `-D` pada port 90.
 ## v1.10.4 — 2026-11-12 — Install baru tidak menggantung; Dropbear 2019 benar-benar terpasang
 
 ### BUG KRITIS: installer diam berjam-jam di VPS baru ("get release list success" / "Installing Xray")
