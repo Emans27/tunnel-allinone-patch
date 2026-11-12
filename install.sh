@@ -1,5 +1,5 @@
 #!/bin/bash
-# mytunnel install.sh - SUNEK VPN v1.10.2 (TAHAP 1+2+3+4+5+6+8)
+# mytunnel install.sh - SUNEK VPN v1.10.3 (TAHAP 1+2+3+4+5+6+8)
 # Debian 11/12, Ubuntu 18/20/22/24 - disarankan Debian 12 / Ubuntu 22.04
 # Idempotent, testable via MYTUNNEL_PREFIX=... MYTUNNEL_DOMAIN=example.com bash install.sh --no-deps
 # Aman: wget -qO install.sh https://raw.githubusercontent.com/USER/REPO/main/install.sh && less install.sh && bash install.sh
@@ -12293,6 +12293,10 @@ slowdns_install(){
   ssh_port=$(echo "$ssh_port" | tr -dc '0-9' | head -c 5)
   [ -z "$ssh_port" ] && ssh_port=22
   if [ "$ssh_port" -lt 1 ] || [ "$ssh_port" -gt 65535 ] 2>/dev/null; then echo -e "${RED}Port harus 1-65535${RESET}"; return 1; fi
+  # 53/5300 milik SlowDNS sendiri -> upstream ke situ = loop, tunnel mustahil konek
+  case "$ssh_port" in
+    53|5300) echo -e "${RED}Port $ssh_port dipakai SlowDNS sendiri (53/5300). Pakai 22 atau 10004.${RESET}"; return 1 ;;
+  esac
   echo -e "Tipe record: 1)TXT 2)NULL 3)CNAME 4)NS 5)MX 6)SRV  [1]"
   read -rp " Pilih [1-6]: " _rt
   case "${_rt:-1}" in
@@ -12352,7 +12356,7 @@ SSH_PORT="$ssh_port"
 RTYPE="$rtype"
 FALLBACK="$fb"
 MTU="1232"
-DNSTT_COMPAT="0"
+DNSTT_COMPAT="1"
 RESOLVED_BAK="$resolved_bak"
 CFEOF
   chmod 644 "$CONF" 2>/dev/null || true
@@ -14648,7 +14652,7 @@ cat > "$ETC/config/dropbear_versions.txt" << '__EMBED_EOF__'
 __EMBED_EOF__
 chmod 644 "$ETC/config/dropbear_versions.txt"
 cat > "$ETC/config/version.txt" << '__EMBED_EOF__'
-v1.10.2
+v1.10.3
 __EMBED_EOF__
 chmod 644 "$ETC/config/version.txt"
 cat > "$ETC/config/repo.txt" << '__EMBED_EOF__'
@@ -14657,6 +14661,34 @@ __EMBED_EOF__
 chmod 644 "$ETC/config/repo.txt"
 cat > "$ETC/CHANGELOG.md" << '__EMBED_EOF__'
 # CHANGELOG
+## v1.10.3 — 2026-11-12 — SlowDNS benar-benar konek: compat wire + tolak upstream 53
+
+### BUG KRITIS: SlowDNS jalan tapi klien tidak pernah bisa konek
+Dua cacat yang saling menutupi di `advanced/slowdns.sh`:
+
+1. `slowdns_install()` menulis `DNSTT_COMPAT="0"` **hardcoded** ke `slowdns.conf`,
+   padahal `_slowdns_read_conf()` memakai default `"1"`. Akibatnya service tidak
+   pernah diberi flag `-dnstt-compat`, jadi binary vaydns memakai format wire baru.
+   `dnstt-client` standar (dan aplikasi SlowDNS/DNSTT yang beredar) gagal di
+   `accept streams: noise handshake: timeout` — server terlihat "ready" di log
+   padahal tidak ada satu pun sesi yang lolos. Gejala di klien: connect tapi tidak
+   ada data / `Connection timed out during banner exchange`.
+2. Prompt "Port SSH target [22]" menerima **53** apa adanya. Karena 53/5300 milik
+   SlowDNS sendiri, `-upstream 127.0.0.1:53` membuat server meneruskan ke port
+   kosong (atau ke dirinya sendiri) — tunnel mustahil konek walau flag benar.
+
+Sekarang: `DNSTT_COMPAT="1"` ditulis eksplisit, dan port 53/5300 ditolak dengan
+pesan jelas saat install.
+
+Diverifikasi live di VPS 43.128.104.92: `dnstt-client -udp <ip>:5300 ... 127.0.0.1:7000`
+→ `begin stream` + handshake SSH sampai (balasan `Permission denied (publickey,password)`
+dari sshd = jalur sudah tembus).
+
+### Catatan klien
+Aplikasi klien memakai **port 53/UDP** (bukan 5300): iptables me-redirect
+`PREROUTING udp dport 53 -> 5300`. 5300 hanya dipakai untuk uji langsung.
+Record type harus sama dengan `RTYPE` di `slowdns.conf`; `NULL` paling kompatibel.
+
 ## v1.10.2 — 2026-11-12 — fix nginx mati: pemegang :80 di conf.d + unit ter-mask
 
 ### BUG: nginx mati setelah install, semua port 443/8080/2082/2083/8880/81 hilang
@@ -15299,7 +15331,7 @@ Tidak memperbaiki tanpa menyelaraskan versi klien/server, jadi XHTTP dihapus.
 __EMBED_EOF__
 chmod 644 "$ETC/CHANGELOG.md"
 cat > "$ETC/VERSION" << '__EMBED_EOF__'
-v1.10.2
+v1.10.3
 __EMBED_EOF__
 chmod 644 "$ETC/VERSION"
 cat > "$ETC/menu/doctor.sh" << '__EMBED_EOF__'

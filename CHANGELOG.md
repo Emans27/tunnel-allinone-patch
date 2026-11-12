@@ -1,4 +1,32 @@
 # CHANGELOG
+## v1.10.3 — 2026-11-12 — SlowDNS benar-benar konek: compat wire + tolak upstream 53
+
+### BUG KRITIS: SlowDNS jalan tapi klien tidak pernah bisa konek
+Dua cacat yang saling menutupi di `advanced/slowdns.sh`:
+
+1. `slowdns_install()` menulis `DNSTT_COMPAT="0"` **hardcoded** ke `slowdns.conf`,
+   padahal `_slowdns_read_conf()` memakai default `"1"`. Akibatnya service tidak
+   pernah diberi flag `-dnstt-compat`, jadi binary vaydns memakai format wire baru.
+   `dnstt-client` standar (dan aplikasi SlowDNS/DNSTT yang beredar) gagal di
+   `accept streams: noise handshake: timeout` — server terlihat "ready" di log
+   padahal tidak ada satu pun sesi yang lolos. Gejala di klien: connect tapi tidak
+   ada data / `Connection timed out during banner exchange`.
+2. Prompt "Port SSH target [22]" menerima **53** apa adanya. Karena 53/5300 milik
+   SlowDNS sendiri, `-upstream 127.0.0.1:53` membuat server meneruskan ke port
+   kosong (atau ke dirinya sendiri) — tunnel mustahil konek walau flag benar.
+
+Sekarang: `DNSTT_COMPAT="1"` ditulis eksplisit, dan port 53/5300 ditolak dengan
+pesan jelas saat install.
+
+Diverifikasi live di VPS 43.128.104.92: `dnstt-client -udp <ip>:5300 ... 127.0.0.1:7000`
+→ `begin stream` + handshake SSH sampai (balasan `Permission denied (publickey,password)`
+dari sshd = jalur sudah tembus).
+
+### Catatan klien
+Aplikasi klien memakai **port 53/UDP** (bukan 5300): iptables me-redirect
+`PREROUTING udp dport 53 -> 5300`. 5300 hanya dipakai untuk uji langsung.
+Record type harus sama dengan `RTYPE` di `slowdns.conf`; `NULL` paling kompatibel.
+
 ## v1.10.2 — 2026-11-12 — fix nginx mati: pemegang :80 di conf.d + unit ter-mask
 
 ### BUG: nginx mati setelah install, semua port 443/8080/2082/2083/8880/81 hilang
