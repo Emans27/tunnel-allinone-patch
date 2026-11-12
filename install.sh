@@ -1,5 +1,5 @@
 #!/bin/bash
-# mytunnel install.sh - SUNEK VPN v1.10.1 (TAHAP 1+2+3+4+5+6+8)
+# mytunnel install.sh - SUNEK VPN v1.10.2 (TAHAP 1+2+3+4+5+6+8)
 # Debian 11/12, Ubuntu 18/20/22/24 - disarankan Debian 12 / Ubuntu 22.04
 # Idempotent, testable via MYTUNNEL_PREFIX=... MYTUNNEL_DOMAIN=example.com bash install.sh --no-deps
 # Aman: wget -qO install.sh https://raw.githubusercontent.com/USER/REPO/main/install.sh && less install.sh && bash install.sh
@@ -6467,6 +6467,8 @@ enable_service() {
     return 0
   fi
   systemctl daemon-reload 2>/dev/null || true
+  # unit bisa ter-mask dari instalasi versi lama -> enable/reload akan gagal senyap
+  systemctl is-enabled nginx 2>/dev/null | grep -q '^masked' && systemctl unmask nginx >/dev/null 2>&1 || true
   systemctl enable nginx 2>/dev/null || true
   systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || service nginx restart 2>/dev/null || nginx -s reload 2>/dev/null || true
   sleep 1
@@ -8917,21 +8919,38 @@ LOG="${BASE}/var/log/mytunnel.log"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
 RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"; RESET="${RESET:-\033[0m}"
 
-_free_port80(){
-  # Site default bawaan paket nginx (/etc/nginx/sites-enabled/default) memegang
-  # "listen 80 default_server" -> httpmux gagal bind :80 (EADDRINUSE).
-  # Pindahkan ke /root/backup lalu reload nginx. Jangan sentuh config mytunnel
-  # sendiri (mytunnel.conf sengaja TIDAK listen 80, 80 dipakai httpmux).
-  local f=/etc/nginx/sites-enabled/default
-  if [ -e "$f" ] && grep -qE '^[[:space:]]*listen[[:space:]]+(\[::\]:)?80([[:space:];])' "$f" 2>/dev/null; then
-    mkdir -p /root/backup 2>/dev/null || true
-    mv -f "$f" "/root/backup/nginx-default.pre-httpmux-$(date +%Y%m%d-%H%M%S)" 2>/dev/null \
-      || rm -f "$f" 2>/dev/null || true
-    echo -e "${YELLOW}httpmux: nginx default site (pemegang :80) dipindah ke /root/backup${RESET}"
-    if command -v nginx >/dev/null 2>&1 && nginx -t >/dev/null 2>&1; then
-      systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
-    fi
+_unmask_nginx(){
+  # nginx pernah di-mask (temuan lapangan: unit ter-mask -> nginx mati, semua
+  # port 8080/2082/2083/8880/8443/81 hilang walau httpmux :80 hidup).
+  if systemctl is-enabled nginx 2>/dev/null | grep -q '^masked'; then
+    systemctl unmask nginx >/dev/null 2>&1 || true
+    systemctl enable nginx >/dev/null 2>&1 || true
+    echo -e "${YELLOW}nginx: unit ter-mask, di-unmask + enable${RESET}"
   fi
+  if command -v nginx >/dev/null 2>&1 && ! systemctl is-active --quiet nginx 2>/dev/null; then
+    systemctl start nginx >/dev/null 2>&1 || true
+  fi
+}
+
+_free_port80(){
+  # Pemegang "listen 80" bawaan paket nginx bikin httpmux gagal bind :80
+  # (EADDRINUSE). Ubuntu 22.04 pakai /etc/nginx/conf.d/default.conf, Debian
+  # pakai /etc/nginx/sites-enabled/default -> cek KEDUANYA.
+  # Jangan sentuh config mytunnel (mytunnel.conf sengaja TIDAK listen 80).
+  local f moved=0
+  for f in /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf; do
+    [ -e "$f" ] || continue
+    grep -qE '^[[:space:]]*listen[[:space:]]+(\[::\]:)?80([[:space:];])' "$f" 2>/dev/null || continue
+    mkdir -p /root/backup 2>/dev/null || true
+    mv -f "$f" "/root/backup/nginx-default.pre-httpmux-$(date +%Y%m%d-%H%M%S)-$(basename "$f")" 2>/dev/null \
+      || rm -f "$f" 2>/dev/null || true
+    echo -e "${YELLOW}httpmux: nginx site pemegang :80 dipindah ke /root/backup ($f)${RESET}"
+    moved=1
+  done
+  if [ "$moved" = 1 ] && command -v nginx >/dev/null 2>&1 && nginx -t >/dev/null 2>&1; then
+    systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
+  fi
+  _unmask_nginx
   # pastikan benar-benar bebas (listener httpmux sendiri tidak dihitung)
   if ss -ltn 2>/dev/null | grep -q ':80 ' && ! systemctl is-active --quiet mytunnel-httpmux 2>/dev/null; then
     echo -e "${YELLOW}PERINGATAN: masih ada listener di :80 (httpmux bisa gagal bind)${RESET}"
@@ -14629,7 +14648,7 @@ cat > "$ETC/config/dropbear_versions.txt" << '__EMBED_EOF__'
 __EMBED_EOF__
 chmod 644 "$ETC/config/dropbear_versions.txt"
 cat > "$ETC/config/version.txt" << '__EMBED_EOF__'
-v1.10.1
+v1.10.2
 __EMBED_EOF__
 chmod 644 "$ETC/config/version.txt"
 cat > "$ETC/config/repo.txt" << '__EMBED_EOF__'
@@ -14638,6 +14657,28 @@ __EMBED_EOF__
 chmod 644 "$ETC/config/repo.txt"
 cat > "$ETC/CHANGELOG.md" << '__EMBED_EOF__'
 # CHANGELOG
+## v1.10.2 — 2026-11-12 — fix nginx mati: pemegang :80 di conf.d + unit ter-mask
+
+### BUG: nginx mati setelah install, semua port 443/8080/2082/2083/8880/81 hilang
+`_free_port80()` hanya menyingkirkan `/etc/nginx/sites-enabled/default`. Di Ubuntu 22.04
+site bawaan ada di **`/etc/nginx/conf.d/default.conf`** (`listen 80;`) sehingga:
+httpmux tetap bisa bind :80, tapi nginx gagal `bind() to 0.0.0.0:80 failed (98: Address
+already in use)` → unit `nginx.service` mati. Pada VPS yang sebelumnya pernah di-mask,
+`systemctl start nginx` malah menjawab `Unit nginx.service is masked` — tanpa error jelas
+di akhir installer.
+
+Sekarang:
+- `_free_port80()` memindai **`/etc/nginx/sites-enabled/*` dan `/etc/nginx/conf.d/*.conf`**,
+  memindahkan setiap file yang punya `listen 80` ke `/root/backup/` (nama file dipertahankan).
+- `_unmask_nginx()` baru: `systemctl unmask` + `enable` bila unit ter-mask, lalu start bila
+  belum aktif. Dipanggil dari `_free_port80()`.
+- `enable_service()` di embedded `setup/nginx.sh` juga unmask sebelum enable, supaya
+  instalasi ulang di VPS lama tidak lagi gagal senyap.
+
+Diverifikasi di VPS 43.128.104.92: `nginx -t` OK, nginx aktif, listener 8080/2082/2083/8880/8443/81
+semua kembali; simulasi `_free_port80()` memindahkan `conf.d/default.conf` tanpa menyentuh
+`mytunnel.conf`.
+
 ## v1.10.1 — 2026-11-11 — data SlowDNS di output akun SSH + notifikasi Telegram
 
 ### Added
@@ -15255,11 +15296,10 @@ Tidak memperbaiki tanpa menyelaraskan versi klien/server, jadi XHTTP dihapus.
 - TAHAP 5: 11 features (bandwidth/reboot/speedtest/services/backup/domain/banner/security/autoupdate)
 - TAHAP 6: bot+warp+routing+slowdns (optional, admin-only, keep_outbounds preserve)
 - TAHAP 8: SSH extra (Squid/UDPGW/OHP/OpenVPN/SlowDNS/UDP-Custom) exclusive 80/443
-
 __EMBED_EOF__
 chmod 644 "$ETC/CHANGELOG.md"
 cat > "$ETC/VERSION" << '__EMBED_EOF__'
-v1.10.1
+v1.10.2
 __EMBED_EOF__
 chmod 644 "$ETC/VERSION"
 cat > "$ETC/menu/doctor.sh" << '__EMBED_EOF__'

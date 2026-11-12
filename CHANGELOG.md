@@ -1,4 +1,26 @@
 # CHANGELOG
+## v1.10.2 — 2026-11-12 — fix nginx mati: pemegang :80 di conf.d + unit ter-mask
+
+### BUG: nginx mati setelah install, semua port 443/8080/2082/2083/8880/81 hilang
+`_free_port80()` hanya menyingkirkan `/etc/nginx/sites-enabled/default`. Di Ubuntu 22.04
+site bawaan ada di **`/etc/nginx/conf.d/default.conf`** (`listen 80;`) sehingga:
+httpmux tetap bisa bind :80, tapi nginx gagal `bind() to 0.0.0.0:80 failed (98: Address
+already in use)` → unit `nginx.service` mati. Pada VPS yang sebelumnya pernah di-mask,
+`systemctl start nginx` malah menjawab `Unit nginx.service is masked` — tanpa error jelas
+di akhir installer.
+
+Sekarang:
+- `_free_port80()` memindai **`/etc/nginx/sites-enabled/*` dan `/etc/nginx/conf.d/*.conf`**,
+  memindahkan setiap file yang punya `listen 80` ke `/root/backup/` (nama file dipertahankan).
+- `_unmask_nginx()` baru: `systemctl unmask` + `enable` bila unit ter-mask, lalu start bila
+  belum aktif. Dipanggil dari `_free_port80()`.
+- `enable_service()` di embedded `setup/nginx.sh` juga unmask sebelum enable, supaya
+  instalasi ulang di VPS lama tidak lagi gagal senyap.
+
+Diverifikasi di VPS 43.128.104.92: `nginx -t` OK, nginx aktif, listener 8080/2082/2083/8880/8443/81
+semua kembali; simulasi `_free_port80()` memindahkan `conf.d/default.conf` tanpa menyentuh
+`mytunnel.conf`.
+
 ## v1.10.1 — 2026-11-11 — data SlowDNS di output akun SSH + notifikasi Telegram
 
 ### Added
