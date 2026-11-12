@@ -1,5 +1,5 @@
 #!/bin/bash
-# mytunnel install.sh - SUNEK VPN v1.10.3 (TAHAP 1+2+3+4+5+6+8)
+# mytunnel install.sh - SUNEK VPN v1.10.4 (TAHAP 1+2+3+4+5+6+8)
 # Debian 11/12, Ubuntu 18/20/22/24 - disarankan Debian 12 / Ubuntu 22.04
 # Idempotent, testable via MYTUNNEL_PREFIX=... MYTUNNEL_DOMAIN=example.com bash install.sh --no-deps
 # Aman: wget -qO install.sh https://raw.githubusercontent.com/USER/REPO/main/install.sh && less install.sh && bash install.sh
@@ -20,6 +20,12 @@ MYTUNNEL_YES="${MYTUNNEL_YES:-0}"
 AUTO_YES=0
 NO_DEPS=0
 _log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG" 2>/dev/null || true; }
+# Jalankan skrip setup sambil streaming ke log, tapi kembalikan exit code SKRIP.
+# `bash x.sh | tee` selalu 0 (kode tee), jadi kegagalan tidak pernah terdeteksi.
+_mt_step() {
+  "$@" 2>&1 | tee -a "$LOG" 2>/dev/null
+  return "${PIPESTATUS[0]}"
+}
 _fail() {
   echo -e "${RED}✗ $1${RESET}" | tee -a "$LOG" 2>/dev/null || true
   [ -n "$2" ] && echo -e "${YELLOW}Penyebab: $2${RESET}" >&2
@@ -213,13 +219,37 @@ else
   echo -e "  Auto-YES: lanjut tanpa konfirmasi (MYTUNNEL_YES=1 / --yes)"
   echo -e "  Ringkasan: OS $OS $VER | Arch ${ARCH:-?} | Domain ${MYTUNNEL_DOMAIN:-(-)} | Brand ${MYTUNNEL_BRAND:-SUNEK VPN}"
 fi
+# apt di VPS baru bisa menggantung BERJAM-JAM: unattended-upgrades boot-time
+# memegang /var/lib/dpkg/lock-frontend (ratusan paket) dan apt menunggu tanpa batas.
+# Tanpa ini, installer diam di "Installing Xray..." / "install unzip" seolah hang.
+_apt_quiesce() {
+  [ -n "$MYTUNNEL_PREFIX" ] && return 0
+  mkdir -p /etc/apt/apt.conf.d 2>/dev/null || true
+  # ForceIPv4: VPS tanpa route IPv6 menggantung saat apt mencoba AAAA mirror.
+  # Lock::Timeout: tunggu sopan, bukan gagal "Could not get lock".
+  cat > /etc/apt/apt.conf.d/99mytunnel-install <<'APTEOF' 2>/dev/null || true
+DPkg::Lock::Timeout "600";
+Acquire::ForceIPv4 "true";
+Acquire::http::Timeout "30";
+Acquire::https::Timeout "30";
+Acquire::Retries "2";
+APTEOF
+  systemctl stop apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+  systemctl stop apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+  systemctl stop unattended-upgrades 2>/dev/null || true
+  export DEBIAN_FRONTEND=noninteractive
+}
+_apt_quiesce
+
 if [[ "$NO_DEPS" = "0" && -z "$MYTUNNEL_PREFIX" ]]; then
   echo -e "${CYAN}[1/13] Install dependensi...${RESET}"
   _log "[1/13] apt deps"
   apt-get update -y >/dev/null 2>&1 || true
-  apt-get install -y curl wget jq openssl vnstat bc cron socat dnsutils at python3  >/dev/null 2>&1 || \
-  apt-get install -y curl wget jq openssl bc cron socat at python3 >/dev/null 2>&1 || \
-  apt-get install -y curl wget jq openssl bc at python3 >/dev/null 2>&1 || true
+  # bzip2 WAJIB: tar -xjf dipakai extract Dropbear 2019.78. Tanpa bzip2,
+  # extract gagal dan pesannya menyesatkan ("Extract Dropbear gagal").
+  apt-get install -y curl wget jq openssl vnstat bc cron socat dnsutils at python3 bzip2 >/dev/null 2>&1 || \
+  apt-get install -y curl wget jq openssl bc cron socat at python3 bzip2 >/dev/null 2>&1 || \
+  apt-get install -y curl wget jq openssl bc at python3 bzip2 >/dev/null 2>&1 || true
 fi
 echo -e "${CYAN}[2/13] Buat folder struktur...${RESET}"
 mkdir -p "$ETC/config" "$ETC/db" "$ETC/lib" "$ETC/menu" "$ETC/setup" "$ETC/cron" "$ETC/cert" "$ETC/features" "$ETC/bot" "$ETC/advanced" "$ETC/slowdns" "$ETC/logrotate.d" "$(dirname "$LOG")" "$BIN" "${BASE}/usr/local/etc/xray" "${BASE}/var/log/xray" "${BASE}/var/log/nginx" "${BASE}/etc/nginx/conf.d" "${BASE}/etc/sysctl.d" "${BASE}/var/lib/mytunnel/limit" "${BASE}/var/lib/mytunnel/state" "${BASE}/run" "${BASE}/etc/default" "${BASE}/etc/dropbear" "${BASE}/etc/logrotate.d" 2>/dev/null || true
@@ -6568,8 +6598,22 @@ STUB
     return 0
   fi
   echo -e "${CYAN}Install Dropbear 2019.78 dari source...${RESET}"
-  apt-get update -y >/dev/null 2>&1 || true
-  apt-get install -y build-essential zlib1g-dev >/dev/null 2>&1 || true
+  # bzip2 + toolchain: kalau salah satu tidak ada, build gagal dengan pesan
+  # menyesatkan ("Extract Dropbear gagal" / "Build gagal"). Pasang & buktikan.
+  local _need=""
+  command -v gcc >/dev/null 2>&1 || _need="$_need build-essential"
+  command -v bzip2 >/dev/null 2>&1 || _need="$_need bzip2"
+  dpkg -s zlib1g-dev >/dev/null 2>&1 || _need="$_need zlib1g-dev"
+  if [ -n "$_need" ]; then
+    echo -e "${CYAN}Pasang dependensi build:$_need${RESET}"
+    # shellcheck disable=SC2086
+    apt-get update -y >/dev/null 2>&1 || true
+    # shellcheck disable=SC2086
+    apt-get install -y $_need 2>&1 | tail -n 3 || true
+  fi
+  command -v gcc >/dev/null 2>&1 || die "gcc tidak tersedia" "apt-get install -y build-essential"
+  command -v bzip2 >/dev/null 2>&1 || die "bzip2 tidak tersedia" "apt-get install -y bzip2 (dipakai tar -xjf)"
+  dpkg -s zlib1g-dev >/dev/null 2>&1 || die "zlib1g-dev tidak tersedia" "apt-get install -y zlib1g-dev"
 
   # GCC 10+ default -fno-common: dropbear 2019 gagal link tanpa -fcommon.
   local db_cflags=""
@@ -6640,11 +6684,12 @@ write_config() {
   [ -n "$BASE" ] && banner_path="${BASE}/etc/dropbear/banner"
   # baca port dari ports.conf (single source; ex: DROPBEAR_PORT=90)
   local pf="$ETC/config/ports.conf"
-  local dport="90"
+  dport="90"
   # shellcheck disable=SC1090
   [ -f "$pf" ] && . "$pf" 2>/dev/null || true
   if [ -n "${DROPBEAR_PORT:-}" ]; then dport=$(echo "$DROPBEAR_PORT" | cut -d',' -f1 | tr -d ' '); fi
   [ -z "$dport" ] && dport="90"
+  DROPBEAR_LISTEN_PORT="$dport"
   # backup
   [ -f "$DB_CONF" ] && cp -a "$DB_CONF" "$DB_CONF.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
   # PENTING: JANGAN tambahkan -s atau -g di sini.
@@ -6660,6 +6705,29 @@ DROPBEAR_EXTRA_ARGS="-b $banner_path"
 DROPBEAR_BANNER="$banner_path"
 CFG_EOF
   chmod 644 "$DB_CONF" 2>/dev/null || true
+
+  # Unit systemd sendiri bila VPS tidak punya paket dropbear (Ubuntu 22.04 minimal,
+  # image cloud). Tanpa unit, `systemctl restart dropbear` tidak melakukan apa pun
+  # dan wrapper /usr/sbin/dropbear tidak pernah jalan -> port 90 mati tanpa error.
+  if [ -z "$BASE" ] && [ ! -e /etc/init.d/dropbear ] && [ ! -e /lib/systemd/system/dropbear.service ] \
+     && [ ! -e /etc/systemd/system/dropbear.service ]; then
+    mkdir -p /etc/dropbear 2>/dev/null || true
+    cp -a "$BANNER_SRC" /etc/dropbear/banner 2>/dev/null || true
+    cat > /etc/systemd/system/dropbear.service <<UNIT_EOF
+[Unit]
+Description=Dropbear SSH server (mytunnel)
+After=network.target
+[Service]
+Type=forking
+PIDFile=/run/dropbear.pid
+ExecStart=/usr/sbin/dropbear -p $dport -b /etc/dropbear/banner -P /run/dropbear.pid
+ExecReload=/bin/kill -HUP \$MAINPID
+[Install]
+WantedBy=multi-user.target
+UNIT_EOF
+    chmod 644 /etc/systemd/system/dropbear.service 2>/dev/null || true
+    echo -e "${GREEN}Unit systemd dropbear dibuat (port $dport)${RESET}"
+  fi
   echo -e "${GREEN}Dropbear config: $DB_CONF ($dport)${RESET}"
   # ensure sshd still 22
   if [ -z "$BASE" ] && [ -f /etc/ssh/sshd_config ]; then
@@ -6677,6 +6745,7 @@ validate_and_restart() {
     chmod 644 "$BASE/var/log/dropbear-sim.log" 2>/dev/null || true; chmod 644 "${BASE}/var/log/dropbear-sim.log" 2>/dev/null || true
     return 0
   fi
+  local dport="${DROPBEAR_LISTEN_PORT:-90}"
   echo -e "${CYAN}Validasi dropbear config...${RESET}"
   if command -v dropbear >/dev/null 2>&1; then
     dropbear -h 2>&1 | head -1 || true
@@ -6703,6 +6772,10 @@ validate_and_restart() {
 
 main() {
   echo -e "${CYAN}[dropbear] Setup Dropbear...${RESET}" | tee -a "$LOG" 2>/dev/null || true
+  # /bin/false WAJIB terdaftar di /etc/shells SEBELUM akun dibuat: dropbear 2019
+  # menolak login ("User X has invalid shell, rejected") bila shell tidak terdaftar,
+  # walau password benar. Harus jalan juga saat build ulang gagal.
+  ensure_shell
   install_dropbear
   write_config
   validate_and_restart
@@ -14652,7 +14725,7 @@ cat > "$ETC/config/dropbear_versions.txt" << '__EMBED_EOF__'
 __EMBED_EOF__
 chmod 644 "$ETC/config/dropbear_versions.txt"
 cat > "$ETC/config/version.txt" << '__EMBED_EOF__'
-v1.10.3
+v1.10.4
 __EMBED_EOF__
 chmod 644 "$ETC/config/version.txt"
 cat > "$ETC/config/repo.txt" << '__EMBED_EOF__'
@@ -14660,6 +14733,46 @@ https://raw.githubusercontent.com/Emans27/tunnel-allinone-patch/main
 __EMBED_EOF__
 chmod 644 "$ETC/config/repo.txt"
 cat > "$ETC/CHANGELOG.md" << '__EMBED_EOF__'
+## v1.10.4 — 2026-11-12 — Install baru tidak menggantung; Dropbear 2019 benar-benar terpasang
+
+### BUG KRITIS: installer diam berjam-jam di VPS baru ("get release list success" / "Installing Xray")
+Bukan Xray yang hang. Tiga sebab nyata, semuanya di lapisan apt:
+
+1. `unattended-upgrades` boot-time meng-upgrade 241 paket dan memegang
+   `/var/lib/dpkg/lock-frontend` >1 jam; `apt-get install unzip` di dalam
+   `setup/xray.sh` menunggu lock TANPA batas (`DPkg::Lock::Timeout` default kosong).
+   Gejala: output berhenti tepat setelah `info: Installing Xray ...`, CPU idle.
+2. Mirror `*.clouds.archive.ubuntu.com` punya AAAA record tetapi VPS ini tidak punya
+   route IPv6 → apt menggantung pada koneksi IPv6 yang tidak pernah selesai.
+3. `bzip2` tidak terpasang di image minimal → `tar -xjf` gagal saat build Dropbear.
+
+Perbaikan: `_apt_quiesce()` di awal install (stop `apt-daily*`/`unattended-upgrades`,
+tulis `/etc/apt/apt.conf.d/99mytunnel-install` berisi `DPkg::Lock::Timeout "600"`,
+`Acquire::ForceIPv4 "true"`, timeout 30s, retries 2, `DEBIAN_FRONTEND=noninteractive`),
+`bzip2` masuk daftar dependensi wajib.
+
+### BUG: Dropbear gagal build tetapi installer tetap lapor "selesai"
+`if ! bash "$ETC/setup/dropbear.sh" 2>&1 | tee -a "$LOG"` memakai status `tee`
+(selalu 0) → kegagalan tidak terdeteksi. Ganti dengan helper `_mt_step()` yang
+mengembalikan `${PIPESTATUS[0]}`; dipakai untuk semua langkah setup (9 titik).
+
+### BUG: build Dropbear bergantung pada paket yang tak diperiksa
+Sekarang memeriksa `gcc`, `bzip2`, `zlib1g-dev` lebih dulu, memasang yang kurang,
+dan berhenti dengan pesan yang menyebut paket persisnya.
+
+### BUG: `/etc/shells` diperiksa setelah build
+`ensure_shell` dipindah ke awal `main()`; tanpa `/bin/false` di `/etc/shells`
+dropbear 2019 menolak login akun tunneling ("User 'x' has invalid shell, rejected")
+walau password benar.
+
+### BUG: unit systemd dropbear tidak ada di image minimal
+Jika tidak ada `/etc/init.d/dropbear` maupun unit dari paket, installer menulis
+unit `dropbear.service` sendiri (Type=forking, `-p <port> -b banner -P /run/dropbear.pid`)
+sehingga wrapper 2019.78 benar-benar dijalankan dan port 90 listen.
+
+### Lain-lain
+- `write_config` mengisi `DROPBEAR_LISTEN_PORT`; pesan "Dropbear aktif (port )"
+  tidak lagi kosong.
 # CHANGELOG
 ## v1.10.3 — 2026-11-12 — SlowDNS benar-benar konek: compat wire + tolak upstream 53
 
@@ -15331,7 +15444,7 @@ Tidak memperbaiki tanpa menyelaraskan versi klien/server, jadi XHTTP dihapus.
 __EMBED_EOF__
 chmod 644 "$ETC/CHANGELOG.md"
 cat > "$ETC/VERSION" << '__EMBED_EOF__'
-v1.10.3
+v1.10.4
 __EMBED_EOF__
 chmod 644 "$ETC/VERSION"
 cat > "$ETC/menu/doctor.sh" << '__EMBED_EOF__'
@@ -16532,43 +16645,43 @@ fi
 
 echo -e "${CYAN}[5/13] Setup domain...${RESET}"
 _log "[5/13] domain"
-if ! bash "$ETC/setup/domain.sh" 2>&1 | tee -a "$LOG"; then
+if ! _mt_step bash "$ETC/setup/domain.sh"; then
   _fail "Setup domain gagal" "Cek $ETC/setup/domain.sh dan $LOG"
 fi
 
 echo -e "${CYAN}[6/13] Setup firewall + BBR + swap...${RESET}"
 _log "[6/13] firewall"
-if ! bash "$ETC/setup/firewall.sh" 2>&1 | tee -a "$LOG"; then
+if ! _mt_step bash "$ETC/setup/firewall.sh"; then
   _fail "Setup firewall gagal" "Cek $ETC/setup/firewall.sh dan $LOG"
 fi
 
 echo -e "${CYAN}[7/13] Setup TLS (acme.sh + LE)...${RESET}"
 _log "[7/13] cert"
-if ! bash "$ETC/setup/cert.sh" 2>&1 | tee -a "$LOG"; then
+if ! _mt_step bash "$ETC/setup/cert.sh"; then
   _fail "Setup TLS gagal" "Cek $ETC/setup/cert.sh dan $LOG"
 fi
 
 echo -e "${CYAN}[8/13] Setup Xray...${RESET}"
 _log "[8/13] xray"
-if ! bash "$ETC/setup/xray.sh" 2>&1 | tee -a "$LOG"; then
+if ! _mt_step bash "$ETC/setup/xray.sh"; then
   _fail "Setup Xray gagal" "Cek $ETC/setup/xray.sh dan $LOG"
 fi
 
 echo -e "${CYAN}[9/13] Setup Nginx...${RESET}"
 _log "[9/13] nginx"
-if ! bash "$ETC/setup/nginx.sh" 2>&1 | tee -a "$LOG"; then
+if ! _mt_step bash "$ETC/setup/nginx.sh"; then
   _fail "Setup Nginx gagal" "Cek $ETC/setup/nginx.sh dan $LOG"
 fi
 
 echo -e "${CYAN}[9b/13] Setup tlsmux + stunnel (final 443 fallback)...${RESET}"
 _log "[9b/13] tlsmux+stunnel"
-if ! bash "$ETC/setup/tlsmux.sh" 2>&1 | tee -a "$LOG"; then
+if ! _mt_step bash "$ETC/setup/tlsmux.sh"; then
   echo -e "${YELLOW}Setup tlsmux/stunnel gagal, lanjut (cek manual $ETC/setup/tlsmux.sh)${RESET}" | tee -a "$LOG" 2>/dev/null || true
 fi
 
 echo -e "${CYAN}[9c/13] Setup httpmux port 80 (SSH enhanced)...${RESET}"
 _log "[9c/13] httpmux"
-if ! bash "$ETC/setup/httpmux.sh" install 2>&1 | tee -a "$LOG"; then
+if ! _mt_step bash "$ETC/setup/httpmux.sh" install; then
   echo -e "${YELLOW}Setup httpmux gagal, lanjut (cek manual $ETC/setup/httpmux.sh)${RESET}" | tee -a "$LOG" 2>/dev/null || true
 fi
 
@@ -16618,19 +16731,22 @@ fi
 
 echo -e "${CYAN}[10/13] Setup Dropbear...${RESET}"
 _log "[10/13] dropbear"
-if ! bash "$ETC/setup/dropbear.sh" 2>&1 | tee -a "$LOG"; then
+bash "$ETC/setup/dropbear.sh" 2>&1 | tee -a "$LOG"
+# PENTING: tanpa PIPESTATUS, status pipeline = exit `tee` (selalu 0) sehingga
+# kegagalan setup tidak pernah terdeteksi dan installer lanjut "selesai".
+if [ "${PIPESTATUS[0]}" != "0" ]; then
   _fail "Setup Dropbear gagal" "Cek $ETC/setup/dropbear.sh dan $LOG"
 fi
 
 echo -e "${CYAN}[10b/13] Setup OpenSSH 444 (keep 22)...${RESET}"
 _log "[10b/13] openssh 444"
-if ! bash "$ETC/setup/openssh.sh" 2>&1 | tee -a "$LOG"; then
+if ! _mt_step bash "$ETC/setup/openssh.sh"; then
   echo -e "${YELLOW}Setup OpenSSH 444 gagal, lanjut (cek manual $ETC/setup/openssh.sh)${RESET}" | tee -a "$LOG" 2>/dev/null || true
 fi
 
 echo -e "${CYAN}[11/13] Setup SSH-WS...${RESET}"
 _log "[11/13] sshws"
-if ! bash "$ETC/setup/sshws.sh" 2>&1 | tee -a "$LOG"; then
+if ! _mt_step bash "$ETC/setup/sshws.sh"; then
   _fail "Setup SSH-WS gagal" "Cek $ETC/setup/sshws.sh dan $LOG"
 fi
 

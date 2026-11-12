@@ -1,3 +1,43 @@
+## v1.10.4 — 2026-11-12 — Install baru tidak menggantung; Dropbear 2019 benar-benar terpasang
+
+### BUG KRITIS: installer diam berjam-jam di VPS baru ("get release list success" / "Installing Xray")
+Bukan Xray yang hang. Tiga sebab nyata, semuanya di lapisan apt:
+
+1. `unattended-upgrades` boot-time meng-upgrade 241 paket dan memegang
+   `/var/lib/dpkg/lock-frontend` >1 jam; `apt-get install unzip` di dalam
+   `setup/xray.sh` menunggu lock TANPA batas (`DPkg::Lock::Timeout` default kosong).
+   Gejala: output berhenti tepat setelah `info: Installing Xray ...`, CPU idle.
+2. Mirror `*.clouds.archive.ubuntu.com` punya AAAA record tetapi VPS ini tidak punya
+   route IPv6 → apt menggantung pada koneksi IPv6 yang tidak pernah selesai.
+3. `bzip2` tidak terpasang di image minimal → `tar -xjf` gagal saat build Dropbear.
+
+Perbaikan: `_apt_quiesce()` di awal install (stop `apt-daily*`/`unattended-upgrades`,
+tulis `/etc/apt/apt.conf.d/99mytunnel-install` berisi `DPkg::Lock::Timeout "600"`,
+`Acquire::ForceIPv4 "true"`, timeout 30s, retries 2, `DEBIAN_FRONTEND=noninteractive`),
+`bzip2` masuk daftar dependensi wajib.
+
+### BUG: Dropbear gagal build tetapi installer tetap lapor "selesai"
+`if ! bash "$ETC/setup/dropbear.sh" 2>&1 | tee -a "$LOG"` memakai status `tee`
+(selalu 0) → kegagalan tidak terdeteksi. Ganti dengan helper `_mt_step()` yang
+mengembalikan `${PIPESTATUS[0]}`; dipakai untuk semua langkah setup (9 titik).
+
+### BUG: build Dropbear bergantung pada paket yang tak diperiksa
+Sekarang memeriksa `gcc`, `bzip2`, `zlib1g-dev` lebih dulu, memasang yang kurang,
+dan berhenti dengan pesan yang menyebut paket persisnya.
+
+### BUG: `/etc/shells` diperiksa setelah build
+`ensure_shell` dipindah ke awal `main()`; tanpa `/bin/false` di `/etc/shells`
+dropbear 2019 menolak login akun tunneling ("User 'x' has invalid shell, rejected")
+walau password benar.
+
+### BUG: unit systemd dropbear tidak ada di image minimal
+Jika tidak ada `/etc/init.d/dropbear` maupun unit dari paket, installer menulis
+unit `dropbear.service` sendiri (Type=forking, `-p <port> -b banner -P /run/dropbear.pid`)
+sehingga wrapper 2019.78 benar-benar dijalankan dan port 90 listen.
+
+### Lain-lain
+- `write_config` mengisi `DROPBEAR_LISTEN_PORT`; pesan "Dropbear aktif (port )"
+  tidak lagi kosong.
 # CHANGELOG
 ## v1.10.3 — 2026-11-12 — SlowDNS benar-benar konek: compat wire + tolak upstream 53
 
