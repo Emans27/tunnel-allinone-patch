@@ -1,3 +1,18 @@
+## v1.11.0 — 2026-11-18 — Garis pemisah output akun: `-` -> em-dash `—`
+
+Output Create/Trial (SSH via `print_ssh_account_info` di `lib/ssh_helpers.sh`,
+VMess/VLESS/Trojan via `print_proto_account_info` di `lib/proto_helpers.sh`)
+memakai garis pemisah `DASH` dari 36 hyphen ASCII (`-`). Diganti ke em-dash
+`—` agar tampil rapi di Telegram (kirim notif create/trial) tanpa tampak
+seperti daftar strip pendek.
+
+Hanya variabel `DASH` (garis dekoratif) yang diubah — tidak menyentuh hyphen
+di UUID, path ws/gRPC (`/vmess`, `/trojan`), angka port, atau argumen baris
+perintah, sehingga link/config akun tetap valid.
+
+Diverifikasi live di VPS (43.128.104.92): `print_ssh_account_info` kini
+menampilkan garis em-dash penuh di antara field akun.
+
 ## v1.10.9 — 2026-11-18 — OpenVPN: ganti opsi yang dihapus di OpenVPN 2.5+
 
 `setup/openvpn.sh` menulis `client-cert-not-required` ke config server. Opsi itu
