@@ -2158,11 +2158,17 @@ def code(t): return "<code>" + html.escape(t) + "</code>"
 def issep(s):
     st = s.strip()
     return st == "" or (len(st) >= 3 and len(set(st)) == 1)
-# judul = baris ter-centang (indentasi besar) ATAU mengandung kata header ini
+  # judul sejati: header blok (SSH/Dropbear, OpenVPN, Account Created
+  # Successfully) = baris tanpa ' : ' DAN bukan URL; selebihnya field.
 def is_title(s):
     st = s.strip()
-    return (s != st and st != "") or st.upper() in (
-        "SSH/DROPBEAR", "OPENVPN", "ACCOUNT CREATED SUCCESSFULLY")
+    if st == "": return False
+    up = st.upper().rstrip(":")
+    if up in ("SSH/DROPBEAR", "OPENVPN", "ACCOUNT CREATED SUCCESSFULLY"):
+        return True
+    if " : " in s: return False          # label:nilai -> field
+    if st.lower().startswith("http"): return False  # link -> nilai <code>
+    return True
 for line in sys.stdin.read().split("\n"):
     s = line.rstrip("\r")
     if issep(s):
@@ -2175,7 +2181,7 @@ for line in sys.stdin.read().split("\n"):
         lab, val = s.split(" : ", 1)
         # label sah = tanpa "[", "]", "(", "/" berlebih (hindari payload)
         if "[" not in lab and "]" not in lab and val.strip() != "":
-            sys.stdout.write(lab + " : " + code(val) + "\n"); continue
+            sys.stdout.write(lab + " : " + code(val.strip()) + "\n"); continue
     # baris tanpa label -> nilai penuh (link/uuid/login cepat) dibungkus <code>
     sys.stdout.write(code(s) + "\n" if s.strip() else "\n")
   ')

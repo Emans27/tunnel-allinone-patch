@@ -1,3 +1,23 @@
+## v1.11.7 — 2026-11-18 — Perbaiki judul vs field & nilai ter-strip di blok mono
+
+Dua kekurangan pada implementasi v1.11.6 (ditemukan saat dicek di Telegram):
+
+1. **Baris ber-indentasi yang punya ` : ` salah masuk judul.** `Expired` awalnya
+   dianggap judul (karena barisnya ter-indentasi) sehingga nilainya TIDAK
+   di-`<code>`. Kini judul ditentukan dari daftar header eksplisit
+   (`SSH/Dropbear`, `OpenVPN`, `Account Created Successfully`) + syarat tanpa
+   ` : `; baris `    Expired : 2026-11-20` kembali diproses sebagai field dan
+   nilainya dibungkus `<code>`.
+2. **Nilai kini di-`.strip()`** sebelum di-`<code>` — menghilangkan spasi
+   terdepan yang ikut terbawa (mis. `Expired -> " 2026-11-20"`).
+3. **Komentar judul duplikat dibersihkan** (sisa 3 patch bertumpuk).
+
+Hasil klasifikasi blok SSH (diverifikasi live di VPS 43.128.104.92):
+`SSH/Dropbear` & `OpenVPN` = TITLE (plain), `Expired` = FIELD (`<code>`),
+link zip = VALUE (`<code>`), login cepat & identitas & payload = FIELD
+(`<code>`), label kiri tetap plain. `bash -n` OK, kirim ke Telegram sukses,
+`mytunnel-bot` active setelah restart.
+
 ## v1.11.6 — 2026-11-18 — ATURAN FORMAT notif: hanya nilai di-<code>, label plain
 
 Menerapkan aturan format eksplisit untuk `ah_notify_admin_mono` (parse_mode=HTML):
