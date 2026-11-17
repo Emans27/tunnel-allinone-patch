@@ -8184,7 +8184,7 @@ explicit-exit-notify 1
 # PAM auth - username/password SSH yang sama (tanpa client cert)
 plugin $pam_plugin login
 username-as-common-name
-client-cert-not-required
+verify-client-cert none
 # revoke list (jika ada)
 crl-verify $ovpn_dir/crl.pem
 # allow duplicate cn handled via limitip? allow

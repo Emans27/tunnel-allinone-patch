@@ -1,3 +1,23 @@
+## v1.10.9 — 2026-11-18 — OpenVPN: ganti opsi yang dihapus di OpenVPN 2.5+
+
+`setup/openvpn.sh` menulis `client-cert-not-required` ke config server. Opsi itu
+Dihapus di OpenVPN 2.5+ (diganti `verify-client-cert none`), sehingga di VPS
+dengan OpenVPN baru (terverifikasi Debian 12 / OpenVPN 2.6.14) semua service
+OpenVPN gagal start:
+
+    REMOVED OPTION: --client-cert-not-required, use
+    '--verify-client-cert none' instead
+    Exiting due to fatal error
+    systemd: mytunnel-openvpn-tcp.service: Failed with result 'exit-code'
+
+dan service masuk loop restart. Diganti `verify-client-cert none` — valid di
+OpenVPN 2.5/2.6 dan maknanya identik (autentikasi PAM username/password,
+client cert tidak wajib, tetap ada `plugin .../login` + `crl-verify`).
+
+Diverifikasi live di VPS produksi (43.128.104.92, Debian 12 / OpenVPN 2.6.14):
+config dipatch, `systemctl enable --now mytunnel-openvpn-tcp mytunnel-openvpn-udp`
+→ kedua service `active` dan log `Initialization Sequence Completed`.
+
 ## v1.10.8 — 2026-11-18 — KOREKSI v1.10.6: _mt_step di script ter-embed (install mati di [8/13])
 
 v1.10.6 mengganti 6 tempat `| tee` menjadi `_mt_step`, tetapi 5 di antaranya
