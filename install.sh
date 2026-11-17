@@ -5248,6 +5248,9 @@ cat > "$ETC/setup/cert.sh" << '__EMBED_EOF__'
 # mytunnel setup/cert.sh - TLS via acme.sh (Let's Encrypt, standalone 80)
 # shellcheck disable=SC1091,SC1090
 set -e
+# Helper lokal: script ini berdiri sendiri (tidak mewarisi _mt_step dari installer).
+# `cmd | tee` selalu return status tee (0); ambil status asli dari PIPESTATUS[0].
+_mt_step(){ "$@" 2>&1 | tee -a "$LOG" 2>/dev/null; return "${PIPESTATUS[0]}"; }
 BASE="${MYTUNNEL_PREFIX:-}"
 ETC="${BASE}/etc/mytunnel"
 LOG="${BASE}/var/log/mytunnel.log"
@@ -5616,6 +5619,9 @@ cat > "$ETC/setup/xray.sh" << '__EMBED_EOF__'
 # mytunnel setup/xray.sh - install & config Xray (9 inbounds (ws/grpc/hu + api): ws+grpc+httpupgrade)
 # shellcheck disable=SC1091,SC1090
 set -e
+# Helper lokal: script ini berdiri sendiri (tidak mewarisi _mt_step dari installer).
+# `cmd | tee` selalu return status tee (0); ambil status asli dari PIPESTATUS[0].
+_mt_step(){ "$@" 2>&1 | tee -a "$LOG" 2>/dev/null; return "${PIPESTATUS[0]}"; }
 BASE="${MYTUNNEL_PREFIX:-}"
 ETC="${BASE}/etc/mytunnel"
 LOG="${BASE}/var/log/mytunnel.log"
@@ -5973,6 +5979,9 @@ cat > "$ETC/setup/nginx.sh" << '__EMBED_EOF__'
 # mytunnel setup/nginx.sh - install & config Nginx (80 WS+HU + 443 TLS WS/HU/gRPC)
 # shellcheck disable=SC1091,SC1090,SC2034,SC2155
 set -e
+# Helper lokal: script ini berdiri sendiri (tidak mewarisi _mt_step dari installer).
+# `cmd | tee` selalu return status tee (0); ambil status asli dari PIPESTATUS[0].
+_mt_step(){ "$@" 2>&1 | tee -a "$LOG" 2>/dev/null; return "${PIPESTATUS[0]}"; }
 BASE="${MYTUNNEL_PREFIX:-}"
 ETC="${BASE}/etc/mytunnel"
 LOG="${BASE}/var/log/mytunnel.log"
@@ -6794,6 +6803,9 @@ cat > "$ETC/setup/openssh.sh" << '__EMBED_EOF__'
 # mytunnel setup/openssh.sh - pindah OpenSSH ke 444 (keep 22 sampai terbukti), backup/validate/rollback
 # shellcheck disable=SC1091,SC1090
 set -e
+# Helper lokal: script ini berdiri sendiri (tidak mewarisi _mt_step dari installer).
+# `cmd | tee` selalu return status tee (0); ambil status asli dari PIPESTATUS[0].
+_mt_step(){ "$@" 2>&1 | tee -a "$LOG" 2>/dev/null; return "${PIPESTATUS[0]}"; }
 BASE="${MYTUNNEL_PREFIX:-}"
 ETC="${BASE}/etc/mytunnel"
 LOG="${BASE}/var/log/mytunnel.log"
@@ -7070,6 +7082,9 @@ cat > "$ETC/setup/squid.sh" << '__EMBED_EOF__'
 # Hanya localhost, bukan 0.0.0.0. Validasi + rollback.
 # shellcheck disable=SC1091,SC1090
 set -e
+# Helper lokal: script ini berdiri sendiri (tidak mewarisi _mt_step dari installer).
+# `cmd | tee` selalu return status tee (0); ambil status asli dari PIPESTATUS[0].
+_mt_step(){ "$@" 2>&1 | tee -a "$LOG" 2>/dev/null; return "${PIPESTATUS[0]}"; }
 BASE="${MYTUNNEL_PREFIX:-}"
 ETC="${BASE}/etc/mytunnel"
 LOG="${BASE}/var/log/mytunnel.log"

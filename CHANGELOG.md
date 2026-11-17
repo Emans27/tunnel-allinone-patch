@@ -1,3 +1,27 @@
+## v1.10.8 — 2026-11-18 — KOREKSI v1.10.6: _mt_step di script ter-embed (install mati di [8/13])
+
+v1.10.6 mengganti 6 tempat `| tee` menjadi `_mt_step`, tetapi 5 di antaranya
+jatuh DI DALAM script yang ditulis installer lewat heredoc (`setup/xray.sh`,
+`setup/cert.sh`, `setup/nginx.sh`, `setup/openssh.sh`, `setup/squid.sh`).
+Script ter-embed itu BERDIRI SENDIRI saat dijalankan `bash` dan tidak mewarisi
+fungsi `_mt_step` milik `install.sh`, sehingga di VPS nyata:
+
+    /etc/mytunnel/setup/xray.sh: line 228: _mt_step: command not found
+    Validasi Xray gagal
+    ✗ Setup Xray gagal  →  installer berhenti di [8/13]
+
+Bukan config Xray yang rusak — validasi yang mati karena helper tidak
+terdefinisi. (Bukti di VPS produksi: `xray-guard` setelahnya berhasil
+restart xray dan aktif kembali, artinya config.json valid dan binary jalan.)
+
+Perbaikan: setiap script ter-embed kini memiliki definisi `_mt_step` lokal
+sendiri (identik semantiknya dengan versi installer: ambil status asli dari
+`PIPESTATUS[0]`, tanpa `||` yang me-reset PIPESTATUS).
+
+Verifikasi: 5/5 script ter-embed punya definisi helper; `bash -n` bersih
+untuk install.sh dan tiap script yang diekstrak; shellcheck 0 error/warning;
+uji fungsional exit 23 terdeteksi & exit 0 tetap lolos.
+
 ## v1.10.7 — 2026-11-17 — CFLAGS build Dropbear disamakan dengan installer proven (anti -Werror)
 
 `install_dropbear()` membangun Dropbear 2019.78 dengan `CFLAGS="-O2 ${db_cflags}"`
