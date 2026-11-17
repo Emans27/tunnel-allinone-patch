@@ -1,3 +1,25 @@
+## v1.11.5 — 2026-11-18 — Blok akun Telegram dikelompokkan PER BAGIAN (copy 1-ketuk per bagian)
+
+Setelah dicek di Telegram: per-baris `<code>` tidak memberi copy 1-ketuk untuk
+baris panjang (mis. `sg2.sunekvpn.cc.cd:80@user:pass`), dan satu `<pre>`
+(v1.11.3) jadi satu kotak raksasa. Kompromi yang benar: kelompokkan PER BAGIAN.
+
+`ah_notify_admin_mono` kini memecah blok akun menjadi bagian-bagian (blok
+login cepat, identitas, daftar port, payload WS, payload enhanced, link
+OpenVPN, expired — dipisahkan garis pemisah / baris kosong). Tiap bagian
+menjadi SATU `<code>...</code>`: tetap MONO, kolom sejajar, dan tiap bagian
+punya tombol copy sendiri (login cepat & payload bisa disalin 1-ketuk).
+
+Grouping memakai `python3` (bukan awk): `LC_ALL=C awk` memotong byte UTF-8 dan
+merusak em-dash sehingga garis pemisah tak terdeteksi. Python menganggap baris
+pemisah = baris kosong ATAU baris yang seluruh karakternya identik (em-dash,
+`-`, `=`, dsb).
+
+Diverifikasi live di VPS (43.128.104.92): render blok SSH menghasilkan 9 blok
+per bagian, tiap blok `<code>` tertutup rapi; kirim ke Telegram sukses
+(bot @Muesea_bot); `mytunnel-bot` active setelah restart; `bash -n` OK untuk
+install.sh dan advanced_helpers.sh.
+
 ## v1.11.4 — 2026-11-18 — Kembalikan blok mono per baris (batal satu <pre>)
 
 v1.11.3 menggabungkan seluruh pesan ke satu `<pre>` (satu kotak copy raksasa).

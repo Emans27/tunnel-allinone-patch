@@ -2149,11 +2149,21 @@ ah_notify_admin_mono(){
   clean=$(printf "%s" "$clean" | tr -d '\r' 2>/dev/null || printf "%s" "$clean")
   # tiap baris dibungkus <code> -> tetap mono per baris, kolom sejajar;
   # TIDAK digabung jadi satu <pre> (biar tidak jadi satu kotak copy raksasa).
-  esc=$(printf "%s" "$clean" | while IFS= read -r _l || [ -n "$_l" ]; do
-    if [ -z "$_l" ]; then printf '\n'; else
-      _e=$(printf "%s" "$_l" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
-      printf '<code>%s</code>\n' "$_e"
-    fi
+  # kelompokkan PER BAGIAN (blok antar garis pemisah / kosong) -> tiap bagian
+  # SATU blok <code> (mono sekaligus copy 1-ketuk per bagian). Grouping via python3
+  # agar aman UTF-8 (awk + LC_ALL=C merusak em-dash).
+  esc=$(printf "%s" "$clean" | python3 -c '
+import sys, html
+buf, out = [], []
+for line in sys.stdin.read().split("\n"):
+    s = line.rstrip("\r"); stripped = s.strip()
+    if stripped == "" or (len(stripped) >= 3 and len(set(stripped)) == 1):
+        if buf: out.append("<code>" + html.escape("\n".join(buf)) + "</code>"); buf = []
+        continue
+    buf.append(s)
+if buf: out.append("<code>" + html.escape("\n".join(buf)) + "</code>")
+sys.stdout.write("\n".join(out))
+  ')
   done)
   curl -4 -fsS --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -d "chat_id=${ADMIN_ID}" -d "parse_mode=HTML" --data-urlencode "text=${esc}" >/dev/null 2>&1 || {
     curl -4 -fsS --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -d "chat_id=${ADMIN_ID}" --data-urlencode "text=${clean}" >/dev/null 2>&1 || true
