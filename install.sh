@@ -2160,15 +2160,34 @@ def issep(s):
     return st == "" or (len(st) >= 3 and len(set(st)) == 1)
   # judul sejati: header blok (SSH/Dropbear, OpenVPN, Account Created
   # Successfully) = baris tanpa ' : ' DAN bukan URL; selebihnya field.
+# judul sejati = header blok. Link protokol (vmess/vless/trojan/http/https://)
+# BUKAN judul -> dibungkus <code> agar bisa copy 1-ketuk.
+import sys, html, re
+def code(t): return "<code>" + html.escape(t) + "</code>"
+def issep(s):
+    st = s.strip()
+    return st == "" or (len(st) >= 3 and len(set(st)) == 1)
+LINK = ("vmess://", "vless://", "trojan://", "http://", "https://")
+HEADERS = ("SSH/DROPBEAR", "OPENVPN", "ACCOUNT CREATED SUCCESSFULLY")
 def is_title(s):
     st = s.strip()
     if st == "": return False
+    if st.lower().startswith(LINK): return False
+    if re.match(r"^[^:]{1,30}:[ \t]*\S", s) and "://" not in st:
+        return False
     up = st.upper().rstrip(":")
-    if up in ("SSH/DROPBEAR", "OPENVPN", "ACCOUNT CREATED SUCCESSFULLY"):
-        return True
-    if " : " in s: return False          # label:nilai -> field
-    if st.lower().startswith("http"): return False  # link -> nilai <code>
+    if up in HEADERS: return True
     return True
+for line in sys.stdin.read().split("\n"):
+    s = line.rstrip("\r")
+    if issep(s):
+        sys.stdout.write(s + "\n"); continue
+    if is_title(s):
+        sys.stdout.write(s + "\n"); continue
+    m = re.match(r"^([^:]{1,30}):(\s*)(.+)$", s)
+    if m and "://" not in m.group(1):
+        sys.stdout.write(m.group(1) + ":" + m.group(2) + code(m.group(3).strip()) + "\n"); continue
+    sys.stdout.write(code(s.strip()) + "\n" if s.strip() else "\n")
 for line in sys.stdin.read().split("\n"):
     s = line.rstrip("\r")
     if issep(s):

@@ -1,3 +1,26 @@
+## v1.11.9 — 2026-11-18 — Pisah label:nilai fleksibel; link protokol jadi <code>
+
+Dua kekurangan pada v1.11.6-1.11.8 (ditemukan saat dicek di Telegram, format
+"TES C" yang dipilih user):
+
+1. **Link `vmess://`/`vless://`/`trojan://` di blok proto tidak di-`<code>`.**
+   Aturan judul lama hanya mengenali `http://`, sehingga link protokol utama
+   (yang paling perlu 1-ketuk copy) jatuh jadi judul plain. Kini semua link
+   (`vmess://`, `vless://`, `trojan://`, `http://`, `https://`) dibungkus
+   `<code>`.
+2. **Proto memakai jarak `:` berbeda** dari SSH (`id : <uuid>`,
+   `alterId : 0`, dsb) sehingga deteksi `" : "` lama meleset. Pemisahan
+   label:nilai kini memakai regex `^([^:]{1,30}):(\s*)(.+)$` — label kiri tetap
+   plain, nilai kanan `<code>`, untuk SSH maupun proto.
+
+Grouping tetap via python3 (aman UTF-8; `LC_ALL=C awk` merusak em-dash).
+Judul blok (VMESS WS TLS, SSH/Dropbear, OpenVPN, dsb.) tetap plain.
+
+Diverifikasi live di VPS (43.128.104.92, bot @Muesea_bot): blok VMess ->
+6 judul plain + 22 nilai/link dalam `<code>` (semua 5 link protokol kini
+`<code>`); kirim SSH & VMess ke Telegram sukses; `mytunnel-bot` active;
+`bash -n` OK install.sh + advanced_helpers.sh.
+
 ## v1.11.8 — 2026-11-18 — Kembalikan garis pemisah ke 32 em-dash (SSH & proto)
 
 Garasi pemisah `DASH` di `lib/ssh_helpers.sh` dan `lib/proto_helpers.sh` sempat
