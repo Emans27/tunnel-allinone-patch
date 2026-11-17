@@ -1,3 +1,21 @@
+## v1.11.3 — 2026-11-18 — Blok akun jadi SATU <pre> -> tombol copy 1-ketuk di Telegram
+
+Sebelumnya `ah_notify_admin_mono` membungkus SETIAP baris jadi `<code>...</code>`
+terpisah (40 blok kecil). Telegram hanya menampilkan tombol "copy" bila
+seluruh pesan adalah SATU blok `<pre>` — dengan `<code>` per-baris, tiap baris
+hanya potongan mono kecil dan tidak ada copy 1-ketuk untuk baris panjang
+(mis. `sg2.sunekvpn.cc.cd:80@user:pass`).
+
+`ah_notify_admin_mono` kini membungkus seluruh pesan ke SATU
+`<pre>...</pre>` (HTML, escape `&`/`<`/`>`). Hasil: satu kotak kode dengan
+tombol copy 1-ketuk untuk seluruh blok akun (SSH, VMess/VLESS/Trojan), kolom
+tetap sejajar karena mono. Link `vless://`/`vmess://`/`trojan://` ikut ke
+dalam kotak yang sama — tetap bisa disalin.
+
+Diverifikasi live di VPS (43.128.104.92, bot @Muesea_bot): kirim blok SSH
+sebenarnya lewat `<pre>` -> API jawab `ok:true` (message_id 1272). Fallback
+tetap ada: bila HTML gagal, kirim teks polos.
+
 ## v1.11.2 — 2026-11-18 — Format blok akun SSH baru (mirip panel tunneling populer)
 
 `ssh_account_block()` ditulis ulang. Format baru, mono, terstruktur per bagian:

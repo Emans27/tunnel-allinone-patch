@@ -2147,14 +2147,10 @@ ah_notify_admin_mono(){
   local clean esc
   clean=$(printf "%s" "$msg" | sed 's/\x1b\[[0-9;]*m//g' 2>/dev/null | sed -E 's/\x1B\[[0-9;]*[mK]//g' 2>/dev/null || printf "%s" "$msg")
   clean=$(printf "%s" "$clean" | tr -d '\r' 2>/dev/null || printf "%s" "$clean")
-  # tiap baris dibungkus <code> -> mono per baris (bukan satu code block <pre>);
-  # baris link (vless://|vmess://|trojan://) tetap dibungkus <code> terpisah agar 1-ketuk copy.
-  esc=$(printf "%s" "$clean" | while IFS= read -r _l || [ -n "$_l" ]; do
-    if [ -z "$_l" ]; then printf '\n'; else
-      _e=$(printf "%s" "$_l" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
-      printf '<code>%s</code>\n' "$_e"
-    fi
-  done)
+  # SATU blok <pre> -> Telegram menampilkan satu kotak kode dengan tombol copy 1-ketuk
+  # untuk SELURUH pesan (mirip panel tunneling populer). Kolom tetap sejajar karena mono.
+  _esc_html(){ printf "%s" "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+  esc="<pre>$(_esc_html "$clean")</pre>"
   curl -4 -fsS --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -d "chat_id=${ADMIN_ID}" -d "parse_mode=HTML" --data-urlencode "text=${esc}" >/dev/null 2>&1 || {
     curl -4 -fsS --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -d "chat_id=${ADMIN_ID}" --data-urlencode "text=${clean}" >/dev/null 2>&1 || true
   }
