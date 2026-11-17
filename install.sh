@@ -1144,7 +1144,7 @@ ssh_account_block() {
     _sd_candidate=$(head -n1 "$sd_pubfile" 2>/dev/null | tr -d '\r\n')
     if [[ "$_sd_candidate" =~ ^[[:xdigit:]]{64}$ ]]; then sd_pubkey="$_sd_candidate"; fi
   fi
-  local DASH="————————————————————————————————————————————————————————————"
+  local DASH="————————————————————————————————————————————"
   local t n
   t=$(printf '%s' "${TLS_PORT:-}" | tr -d ' ' | cut -d',' -f1)
   n=$(printf '%s' "${NONTLS_PORT:-}" | tr -d ' ' | cut -d',' -f1)
@@ -1682,7 +1682,7 @@ print_proto_account_info() {
   [ -z "$isp" ] && isp="-"
   local quota_h
   if [ "$quota" = "0" ] || [ -z "$quota" ]; then quota_h="Unlimited"; else quota_h="${quota} GB"; fi
-  local DASH="————————————————————————————————————————————————————————————"
+  local DASH="————————————————————————————————————————————"
   local proto_upper
   proto_upper=$(echo "$proto" | tr '[:lower:]' '[:upper:]')
   echo -e "${GREY}${DASH}${RESET}"
@@ -2139,7 +2139,8 @@ ah_notify_admin_mono(){
   local clean esc
   clean=$(printf "%s" "$msg" | sed 's/\x1b\[[0-9;]*m//g' 2>/dev/null | sed -E 's/\x1B\[[0-9;]*[mK]//g' 2>/dev/null || printf "%s" "$msg")
   clean=$(printf "%s" "$clean" | tr -d '\r' 2>/dev/null || printf "%s" "$clean")
-  # tiap baris dibungkus <code> -> mono per baris (bukan satu code block <pre>)
+  # tiap baris dibungkus <code> -> mono per baris (bukan satu code block <pre>);
+  # baris link (vless://|vmess://|trojan://) tetap dibungkus <code> terpisah agar 1-ketuk copy.
   esc=$(printf "%s" "$clean" | while IFS= read -r _l || [ -n "$_l" ]; do
     if [ -z "$_l" ]; then printf '\n'; else
       _e=$(printf "%s" "$_l" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
@@ -3014,7 +3015,7 @@ do_create() {
     # notify Telegram admin
     if declare -f ah_notify_admin >/dev/null 2>&1; then
       _ntf=$(print_proto_account_info "$PROTO" "$user" 2>/dev/null || gen_links "$PROTO" "$user" 2>/dev/null || echo "$PROTO $user dibuat")
-      ah_notify_admin "$_ntf" 2>/dev/null || true
+      ah_notify_admin_mono "$_ntf" 2>/dev/null || true
     fi
   else
     echo -e "${RED}Gagal buat $user${RESET}"
@@ -3125,7 +3126,7 @@ do_trial() {
   print_proto_account_info "$PROTO" "$user" 2>/dev/null || gen_links "$PROTO" "$user" 2>/dev/null || true
   if declare -f ah_notify_admin >/dev/null 2>&1; then
     _ntf=$(print_proto_account_info "$PROTO" "$user" 2>/dev/null || gen_links "$PROTO" "$user" 2>/dev/null || echo "$PROTO trial $user")
-    ah_notify_admin "$_ntf" 2>/dev/null || true
+    ah_notify_admin_mono "$_ntf" 2>/dev/null || true
   fi
   if [ -n "$MYTUNNEL_PREFIX" ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] trial $PROTO $user scheduled delete in ${trial_min}m (TEST simulasi)" >> "$LOG" 2>/dev/null || true
@@ -3292,7 +3293,7 @@ do_check_config() {
   echo "$_out"
   echo ""
   if declare -f ah_notify_admin >/dev/null 2>&1; then
-    ah_notify_admin "$_out" 2>/dev/null || true
+    ah_notify_admin_mono "$_out" 2>/dev/null || true
     echo -e "${GREEN}Detail terkirim ke bot ✓${RESET}"
   fi
   echo -ne "${GREY}Tekan Enter...${RESET}"; read -r _
@@ -3580,7 +3581,7 @@ do_create() {
     # notify Telegram admin
     if declare -f ah_notify_admin >/dev/null 2>&1; then
       _ntf=$(print_proto_account_info "$PROTO" "$user" 2>/dev/null || gen_links "$PROTO" "$user" 2>/dev/null || echo "$PROTO $user dibuat")
-      ah_notify_admin "$_ntf" 2>/dev/null || true
+      ah_notify_admin_mono "$_ntf" 2>/dev/null || true
     fi
   else
     echo -e "${RED}Gagal buat $user${RESET}"
@@ -3691,7 +3692,7 @@ do_trial() {
   print_proto_account_info "$PROTO" "$user" 2>/dev/null || gen_links "$PROTO" "$user" 2>/dev/null || true
   if declare -f ah_notify_admin >/dev/null 2>&1; then
     _ntf=$(print_proto_account_info "$PROTO" "$user" 2>/dev/null || gen_links "$PROTO" "$user" 2>/dev/null || echo "$PROTO trial $user")
-    ah_notify_admin "$_ntf" 2>/dev/null || true
+    ah_notify_admin_mono "$_ntf" 2>/dev/null || true
   fi
   if [ -n "$MYTUNNEL_PREFIX" ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] trial $PROTO $user scheduled delete in ${trial_min}m (TEST simulasi)" >> "$LOG" 2>/dev/null || true
@@ -3858,7 +3859,7 @@ do_check_config() {
   echo "$_out"
   echo ""
   if declare -f ah_notify_admin >/dev/null 2>&1; then
-    ah_notify_admin "$_out" 2>/dev/null || true
+    ah_notify_admin_mono "$_out" 2>/dev/null || true
     echo -e "${GREEN}Detail terkirim ke bot ✓${RESET}"
   fi
   echo -ne "${GREY}Tekan Enter...${RESET}"; read -r _
@@ -3927,7 +3928,7 @@ do_recovery() {
   echo -e "${GREEN}Recovery OK: $user -> $new_exp${RESET}"
   local _out; _out=$(print_proto_account_info "$PROTO" "$user" 2>&1) || _out=$(gen_links "$PROTO" "$user" 2>&1) || _out="Akun $user dipulihkan exp $new_exp"
   echo "$_out"
-  if declare -f ah_notify_admin >/dev/null 2>&1; then ah_notify_admin "$_out" 2>/dev/null || true; echo -e "${GREEN}Terkirim ke bot ✓${RESET}"; fi
+  if declare -f ah_notify_admin_mono >/dev/null 2>&1; then ah_notify_admin_mono "$_out" 2>/dev/null || true; echo -e "${GREEN}Terkirim ke bot ✓${RESET}"; fi
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $PROTO recovery $user $exp -> $new_exp" >> "$LOG" 2>/dev/null || true
   echo -ne "${GREY}Tekan Enter...${RESET}"; read -r _
 }
@@ -4146,7 +4147,7 @@ do_create() {
     # notify Telegram admin
     if declare -f ah_notify_admin >/dev/null 2>&1; then
       _ntf=$(print_proto_account_info "$PROTO" "$user" 2>/dev/null || gen_links "$PROTO" "$user" 2>/dev/null || echo "$PROTO $user dibuat")
-      ah_notify_admin "$_ntf" 2>/dev/null || true
+      ah_notify_admin_mono "$_ntf" 2>/dev/null || true
     fi
   else
     echo -e "${RED}Gagal buat $user${RESET}"
@@ -4257,7 +4258,7 @@ do_trial() {
   print_proto_account_info "$PROTO" "$user" 2>/dev/null || gen_links "$PROTO" "$user" 2>/dev/null || true
   if declare -f ah_notify_admin >/dev/null 2>&1; then
     _ntf=$(print_proto_account_info "$PROTO" "$user" 2>/dev/null || gen_links "$PROTO" "$user" 2>/dev/null || echo "$PROTO trial $user")
-    ah_notify_admin "$_ntf" 2>/dev/null || true
+    ah_notify_admin_mono "$_ntf" 2>/dev/null || true
   fi
   if [ -n "$MYTUNNEL_PREFIX" ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] trial $PROTO $user scheduled delete in ${trial_min}m (TEST simulasi)" >> "$LOG" 2>/dev/null || true
@@ -4423,7 +4424,7 @@ do_check_config() {
   echo "$_out"
   echo ""
   if declare -f ah_notify_admin >/dev/null 2>&1; then
-    ah_notify_admin "$_out" 2>/dev/null || true
+    ah_notify_admin_mono "$_out" 2>/dev/null || true
     echo -e "${GREEN}Detail terkirim ke bot ✓${RESET}"
   fi
   echo -ne "${GREY}Tekan Enter...${RESET}"; read -r _
@@ -4492,7 +4493,7 @@ do_recovery() {
   echo -e "${GREEN}Recovery OK: $user -> $new_exp${RESET}"
   local _out; _out=$(print_proto_account_info "$PROTO" "$user" 2>&1) || _out=$(gen_links "$PROTO" "$user" 2>&1) || _out="Akun $user dipulihkan exp $new_exp"
   echo "$_out"
-  if declare -f ah_notify_admin >/dev/null 2>&1; then ah_notify_admin "$_out" 2>/dev/null || true; echo -e "${GREEN}Terkirim ke bot ✓${RESET}"; fi
+  if declare -f ah_notify_admin_mono >/dev/null 2>&1; then ah_notify_admin_mono "$_out" 2>/dev/null || true; echo -e "${GREEN}Terkirim ke bot ✓${RESET}"; fi
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $PROTO recovery $user $exp -> $new_exp" >> "$LOG" 2>/dev/null || true
   echo -ne "${GREY}Tekan Enter...${RESET}"; read -r _
 }

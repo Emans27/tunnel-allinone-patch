@@ -1,3 +1,26 @@
+## v1.11.1 — 2026-11-18 — Notif Create/Trial VMess/VLESS/Trojan kini MONO di Telegram
+
+SSH sudah lama terkirim mono (via `ah_notify_admin_mono`, HTML `<code>` per
+baris -> kolom sejajar). VMess/VLESS/Trojan masih memakai
+`ah_notify_admin` (parse_mode=Markdown) yang HANYA membuat link `vless://`
+mono; sisa blok (Remarks/CITY/ISP/Port/Domain) tampil sebagai teks biasa,
+kolom tak sejajar, dan em-dash berisiko mengganggu parser Markdown.
+
+Diganti: seluruh pemanggilan notif yang mengirim blok akun proto
+(create / trial / detail / recovery — di `menu/vmess.sh`, `vless.sh`,
+`trojan.sh`) kini memakai `ah_notify_admin_mono` agar tampil mono dan kolom
+sejajar, konsisten dengan SSH. Notif 1-baris (delete/backup/expired) tetap
+`ah_notify_admin` Markdown biasa (tak perlu mono).
+
+`ah_notify_admin_mono` kini juga membungkus baris link `vless://`/`vmess://`/
+`trojan://` ke `<code>` masing-masing, sehingga tap-untuk-copy pada link
+tetap berfungsi (sebelumnya hanya `ah_notify_admin` yang melakukannya).
+
+Diverifikasi live di VPS (43.128.104.92): render `print_proto_account_info
+vmess` + pipeline HTML -> 41/41 baris berakhir `</code>` (mono tertutup
+rapi, kolom sejajar). `bash -n` OK untuk install.sh, advanced_helpers.sh,
+dan ketiga menu proto.
+
 ## v1.11.0 — 2026-11-18 — Garis pemisah output akun: `-` -> em-dash `—`
 
 Output Create/Trial (SSH via `print_ssh_account_info` di `lib/ssh_helpers.sh`,
