@@ -1,3 +1,31 @@
+## v1.10.6 — 2026-11-17 — Enam titik `| tee` yang membungkam exit code + chmod cert salah variabel
+
+`perintah | tee` selalu mengembalikan status `tee` (0). Semua pengecekan
+`if ! perintah | tee` / `perintah | tee || { ... }` di file ini karenanya
+tidak pernah bisa gagal — perintah yang gagal dianggap sukses. Helper
+`_mt_step()` (status diambil dari `PIPESTATUS[0]`) sudah ada sejak lama;
+enam tempat yang belum memakainya kini dipindah ke situ:
+
+- `issue_cert()`: issue EC/RSA (kegagalan LE 429 / DNS belum propagasi
+  sekarang benar-benar memicu fallback self-signed, 443 tidak mati senyap)
+  dan `--install-cert` ke staging.
+- `validate_config()` Xray (`run -test`) — konfigurasi rusak kini
+  tertangkap sebelum xray di-restart.
+- `validate_config()` nginx (`nginx -t`), `validate_sshd()` (`sshd -t`),
+  validasi squid (`squid -k parse`): validasi config sebelum restart service.
+
+Diperbaiki pula `chmod 600 "$CERT_KEY" / chmod 644 "$CERT_CRT"` di
+`issue_cert()` — variabel scope itu `$cert_key`/`$cert_crt` (lowercase),
+jadi `chmod` sebelumnya dieksekusi pada string kosong (diam-diam gagal)
+dan permission file sertifikat tidak pernah diset.
+
+Catatan: `| tee || true` pun me-reset `PIPESTATUS` (perintah `true`/assignment
+setelah `||` menjadi terakhir dalam pipeline), jadi pola "tambahkan
+`|| _rc=$PIPESTATUS`" TIDAK cukup — `_mt_step` tanpa `||` dipakai.
+
+Terverifikasi dengan uji shell terhadap ketiga pola (exit 23 terdeteksi,
+exit 0 tetap lolos), `bash -n` bersih, shellcheck 0 error/warning.
+
 ## v1.10.5 — 2026-11-12 — Akun tunneling bisa dipakai setelah auth: useradd -m, bukan -M
 
 `ssh_helpers.sh` membuat akun dengan `useradd -M` (tanpa home). Dropbear 2019

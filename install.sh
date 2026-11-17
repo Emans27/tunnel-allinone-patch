@@ -5412,10 +5412,10 @@ issue_cert() {
   echo -e "${CYAN}Issue sertifikat Let's Encrypt untuk $domain (standalone)...${RESET}"
   # CA eksplisit: default acme.sh = ZeroSSL yang butuh EAB & punya rate limit 1 hari.
   # Let's Encrypt tidak butuh EAB dan lebih toleran untuk issue ulang.
-  if ! "$acme" --issue --standalone -d "$domain" --server letsencrypt --keylength ec-256 2>&1 | tee -a "$LOG"; then
+  if ! _mt_step "$acme" --issue --standalone -d "$domain" --server letsencrypt --keylength ec-256; then
     # fallback rsa
     echo -e "${YELLOW}EC gagal, coba RSA...${RESET}"
-    "$acme" --issue --standalone -d "$domain" --server letsencrypt 2>&1 | tee -a "$LOG" || {
+    if ! _mt_step "$acme" --issue --standalone -d "$domain" --server letsencrypt; then
       # nginx harus hidup lagi walau ACME gagal - cert lama masih utuh (install jalan)
       systemctl start nginx 2>/dev/null || true
       # JANGAN mati install. Rate limit LE (429, 5/domain/minggu) atau DNS belum
@@ -5432,13 +5432,13 @@ issue_cert() {
            -subj "/CN=$domain/O=MyTunnel" -addext "subjectAltName=DNS:$domain" 2>>"$LOG"; then
         die "Self-signed ikut gagal dipasang" "Cek $LOG dan izin tulis $CERT_DIR"
       fi
-      chmod 600 "$CERT_KEY" 2>/dev/null || true
-      chmod 644 "$CERT_CRT" 2>/dev/null || true
+      chmod 600 "$cert_key" 2>/dev/null || true
+      chmod 644 "$cert_crt" 2>/dev/null || true
       echo -e "${YELLOW}Sertifikat self-signed terpasang - browser akan warning 'untrusted'.${RESET}" | tee -a "$LOG"
 echo -e "${YELLOW}Ulangi issue LE setelah rate limit reset (7 hari): bash $ETC/setup/cert.sh --force${RESET}" | tee -a "$LOG"
       _log "cert self-signed dipasang untuk $domain"
       return 0
-    }
+    fi
   fi
 
   # install ke STAGING dulu - cert lama masih dipakai nginx/stunnel, jangan ditimpa
@@ -5463,12 +5463,12 @@ echo -e "${YELLOW}Ulangi issue LE setelah rate limit reset (7 hari): bash $ETC/s
 
   local stg_crt="$CERT_DIR/.fullchain.crt.new" stg_key="$CERT_DIR/.private.key.new"
   echo -e "${CYAN}Install cert ke staging...${RESET}"
-  "$acme" --install-cert -d "$domain" --ecc \
+  _mt_step "$acme" --install-cert -d "$domain" --ecc \
     --fullchain-file "$stg_crt" \
-    --key-file "$stg_key" 2>&1 | tee -a "$LOG" || \
-    "$acme" --install-cert -d "$domain" --server letsencrypt \
+    --key-file "$stg_key" || \
+    _mt_step "$acme" --install-cert -d "$domain" --server letsencrypt \
     --fullchain-file "$stg_crt" \
-    --key-file "$stg_key" 2>&1 | tee -a "$LOG" || {
+    --key-file "$stg_key" || {
       rm -f "$stg_crt" "$stg_key"
       fallback_selfsigned
       return 0
@@ -5837,10 +5837,10 @@ validate_config() {
     echo -e "${CYAN}Validasi xray run -test -config $XRAY_CFG...${RESET}"
     # CATATAN: JANGAN `if ! ... | tee` — status pipeline = status tee (selalu 0),
     # jadi kegagalan xray run -test SELALU ketutup dan config rusak lolos.
-    # Cek PIPESTATUS[0] (status xray asli).
-    "$xbin" run -test -config "$XRAY_CFG" 2>&1 | tee -a "$LOG" || true
-    if [ "${PIPESTATUS[0]}" != "0" ]; then
-      echo -e "${RED}Validasi Xray gagal (exit ${PIPESTATUS[0]})${RESET}"
+    # `| tee || true` maupun `| tee || _rc=...` me-reset PIPESTATUS —
+    # pakai _mt_step (tanpa ||, PIPESTATUS[0] tertangkap murni).
+    if ! _mt_step "$xbin" run -test -config "$XRAY_CFG"; then
+      echo -e "${RED}Validasi Xray gagal${RESET}"
       jq . "$XRAY_CFG" 2>&1 | head -n 50 || cat "$XRAY_CFG" | head -n 50
       return 1
     fi
@@ -6464,7 +6464,7 @@ validate_config() {
     if [ -n "$BASE" ]; then
       if [ -f "$NGINX_MAIN" ]; then
         echo -e "${CYAN}Validasi nginx -t -c $NGINX_MAIN ...${RESET}"
-        if ! nginx -t -c "$NGINX_MAIN" 2>&1 | tee -a "$LOG"; then
+        if ! _mt_step nginx -t -c "$NGINX_MAIN"; then
           echo -e "${YELLOW}nginx -t dengan prefix gagal, cek $NGINX_SITE${RESET}"
           nginx -t 2>&1 | head -n 20 || true
           grep -q "ssl_certificate" "$NGINX_SITE" || die "Nginx config tidak mengandung ssl_certificate" "Cek $NGINX_SITE"
@@ -6913,7 +6913,7 @@ validate_sshd() {
     return 0
   fi
   echo -e "${CYAN}Validasi sshd -t...${RESET}"
-  if ! sshd -t 2>&1 | tee -a "$LOG"; then
+  if ! _mt_step sshd -t; then
     return 1
   fi
   echo -e "${GREEN}sshd -t OK${RESET}"
@@ -7168,7 +7168,7 @@ CFG_EOF
   else
     echo -e "${CYAN}Validasi squid -k parse...${RESET}"
     if command -v squid >/dev/null 2>&1; then
-      if ! squid -k parse 2>&1 | tee -a "$LOG"; then
+      if ! _mt_step squid -k parse; then
         echo -e "${RED}squid -k parse gagal, rollback${RESET}"
         if [ -n "$bak" ] && [ -f "$bak" ]; then cp -a "$bak" "$conf" 2>/dev/null || true; fi
         return 1
