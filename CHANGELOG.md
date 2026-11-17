@@ -1,3 +1,26 @@
+## v1.11.2 — 2026-11-18 — Format blok akun SSH baru (mirip panel tunneling populer)
+
+`ssh_account_block()` ditulis ulang. Format baru, mono, terstruktur per bagian:
+
+- **Judul `SSH/Dropbear`** di tengah (mengganti "Account Created Successfully").
+- **Blok login cepat** di atas: `SSH WS / SSH SSL / SSH UDP / SSH SLOWDNS`
+  dalam format `host:port@user:pass` (siap dipakai langsung di aplikasi klien).
+- **Identitas akun**: HOST / NameServer / Username / Password / PUB Key.
+- **Daftar port lengkap** (label diperlebar ke 18 kolom agar sejajar): TLS,
+  None TLS, Any, OpenSSH, Dropbear, SlowDNS, UDP-Custom, OHP+SSH, Squid,
+  BadVPN UDPGW, OpenVPN TCP/SSL/UDP/DNS, OHP+OVPN.
+- **Payload WS** dan **Payload ENHANCED** (templat `[host]`/`[ua]`/`[crlf]`
+  untuk aplikasi HTTP-injector).
+- **Judul `OpenVPN`** + link `myvpn-config.zip`.
+- **Expired** dipindah ke paling bawah.
+
+PUB Key (dulu "SlowDNS Pubkey") & NameServer (dulu "SlowDNS NS") kini di
+bagian identitas; `SlowDNS Type` dihapus dari tampilan (masih ada di config).
+
+Diverifikasi live di VPS (43.128.104.92, akun `okem`): render sesuai desain,
+40/40 baris mono berakhir `</code>`, total pesan 2184 char (< batas Telegram
+4096). `bash -n` OK untuk install.sh dan ssh_helpers.sh.
+
 ## v1.11.1 — 2026-11-18 — Notif Create/Trial VMess/VLESS/Trojan kini MONO di Telegram
 
 SSH sudah lama terkirim mono (via `ah_notify_admin_mono`, HTML `<code>` per
