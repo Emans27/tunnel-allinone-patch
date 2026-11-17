@@ -1,3 +1,16 @@
+## v1.11.4 — 2026-11-18 — Kembalikan blok mono per baris (batal satu <pre>)
+
+v1.11.3 menggabungkan seluruh pesan ke satu `<pre>` (satu kotak copy raksasa).
+Setelah dicek di Telegram ternyata bukan yang diinginkan. Kembali ke pendekatan
+`<code>` per baris: setiap baris tetap MONO dan kolom sejajar, tanpa dipaksa
+menjadi satu kotak kode tunggal.
+
+`ah_notify_admin_mono` kembali membungkus tiap baris ke `<code>...</code>`
+(dengan escape `&`/`<`/`>`), parse_mode=HTML, fallback teks polos bila HTML gagal.
+
+Diverifikasi live di VPS (43.128.104.92): `bash -n advanced_helpers.sh` OK,
+`mytunnel-bot` active setelah restart, kirim blok akun SSH sukses.
+
 ## v1.11.3 — 2026-11-18 — Blok akun jadi SATU <pre> -> tombol copy 1-ketuk di Telegram
 
 Sebelumnya `ah_notify_admin_mono` membungkus SETIAP baris jadi `<code>...</code>`
