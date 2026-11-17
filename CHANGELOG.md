@@ -1,3 +1,24 @@
+## v1.11.10 — 2026-11-18 — Link protokol dicek dulu (utuh), sebelum aturan judul
+
+Bug pada v1.11.9: link `vmess://eyJ2Ij...` diproses oleh cabang label:nilai
+SEBELUM dianggap link, sehingga terpotong menjadi label `vmess` + nilai
+`//eyJ2Ij...`. Akibatnya tautan protokol utama tampil terpotong dan sulit
+disalin utuh.
+
+Urutan pengecekan kini:
+1. **Link protokol** (`vmess://`, `vless://`, `trojan://`, `http://`,
+   `https://`) dicek PALING AWAL -> dibungkus `<code>` UTUH (tidak terpotong).
+2. **Judul blok** = header eksplisit (`SSH/Dropbear`, `OpenVPN`,
+   `Account Created Successfully`) tanpa ` : ` -> tetap plain.
+3. **label:nilai** (regex `^([^:]{1,30}):(\s*)(.+)$`) -> label plain + nilai
+   `<code>` (SSH maupun proto).
+
+Diverifikasi live di VPS (43.128.104.92): render SSH menghasilkan judul plain
+(`SSH/Dropbear`) + semua field dalam `<code>`; render VMess memberi link
+`vmess://...` utuh dalam `<code>` (tidak terpotong). Kirim SSH & VMess ke
+Telegram sukses (bot @Muesea_bot); `mytunnel-bot` active; `bash -n` OK untuk
+install.sh dan advanced_helpers.sh.
+
 ## v1.11.9 — 2026-11-18 — Pisah label:nilai fleksibel; link protokol jadi <code>
 
 Dua kekurangan pada v1.11.6-1.11.8 (ditemukan saat dicek di Telegram, format
