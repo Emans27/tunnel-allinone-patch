@@ -1,3 +1,14 @@
+## v1.11.8 — 2026-11-18 — Kembalikan garis pemisah ke 32 em-dash (SSH & proto)
+
+Garasi pemisah `DASH` di `lib/ssh_helpers.sh` dan `lib/proto_helpers.sh` sempat
+tergeser ke 44 em-dash saat patch judul/field sebelumnya (tertimpa oleh edit
+bertumpuk). Keduanya kini disamakan kembali ke **32 em-dash** (pendek, pas di
+Telegram) — konsisten untuk SSH maupun VMess/VLESS/Trojan.
+
+Terverifikasi live di VPS (43.128.104.92): `local DASH=` di kedua lib = 32
+em-dash; render blok SSH menampilkan garis 32 em-dash di atas/bawah judul
+`SSH/Dropbear`. `bash -n` OK; `mytunnel-bot` active setelah restart.
+
 ## v1.11.7 — 2026-11-18 — Perbaiki judul vs field & nilai ter-strip di blok mono
 
 Dua kekurangan pada implementasi v1.11.6 (ditemukan saat dicek di Telegram):

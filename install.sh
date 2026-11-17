@@ -1144,7 +1144,7 @@ ssh_account_block() {
     _sd_candidate=$(head -n1 "$sd_pubfile" 2>/dev/null | tr -d '\r\n')
     if [[ "$_sd_candidate" =~ ^[[:xdigit:]]{64}$ ]]; then sd_pubkey="$_sd_candidate"; fi
   fi
-  local DASH="————————————————————————————————————————————"
+  local DASH="————————————————————————————————"
   local t n
   t=$(printf '%s' "${TLS_PORT:-}" | tr -d ' ' | cut -d',' -f1)
   n=$(printf '%s' "${NONTLS_PORT:-}" | tr -d ' ' | cut -d',' -f1)
@@ -1690,7 +1690,7 @@ print_proto_account_info() {
   [ -z "$isp" ] && isp="-"
   local quota_h
   if [ "$quota" = "0" ] || [ -z "$quota" ]; then quota_h="Unlimited"; else quota_h="${quota} GB"; fi
-  local DASH="————————————————————————————————————————————"
+  local DASH="————————————————————————————————"
   local proto_upper
   proto_upper=$(echo "$proto" | tr '[:lower:]' '[:upper:]')
   echo -e "${GREY}${DASH}${RESET}"
