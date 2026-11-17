@@ -1010,6 +1010,8 @@ ssh_create() {
   }
   # jangan log password
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] ssh create $user exp=$expiry limit_ip=$limit_ip" >> "$LOG" 2>/dev/null || true
+  # ZiVPN UDP: username SSH = password ZiVPN (diam bila zivpn tak terpasang)
+  _zivpn_add "$user"
   return 0
 }
 
@@ -1046,6 +1048,8 @@ ssh_delete() {
   }
   rm -f "$tmp" 2>/dev/null || true
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] ssh delete $user" >> "$LOG" 2>/dev/null || true
+  # ZiVPN UDP: cabut username dari password list (jaga minimal "zivpn")
+  _zivpn_del "$user"
   echo -e "${GREEN}User $user dihapus${RESET}"
 }
 
@@ -1279,6 +1283,48 @@ _ssh_online_ips() {
   if command -v who >/dev/null 2>&1; then
     who 2>/dev/null | awk -v u="$u" '$1==u{print $5}' | tr -d '()' | sort -u | tr '\n' ' ' | sed 's/^ //;s/ $//'
   fi
+}
+
+# ==== ZiVPN UDP integration (password = username SSH) ====
+# File config: /etc/zivpn/config.json (JSON, butuh jq). Tidak ada -> skip diam.
+# password "zivpn" selalu dipertahankan agar array tidak pernah kosong.
+ZIVPN_CFG="/etc/zivpn/config.json"
+
+# tambah username sebagai password ZiVPN
+_zivpn_add() {
+  local user="${1:-}"
+  [ -z "$user" ] && return 0
+  [[ "$user" =~ ^[a-zA-Z0-9_.-]+$ ]] || return 0   # jangan injeksi JSON
+  [ -f "$ZIVPN_CFG" ] && command -v jq >/dev/null 2>&1 || return 0
+  local tmp
+  tmp=$(mktemp) || return 0
+  if jq --arg pass "$user" '.auth.config += [$pass] | .auth.config |= unique' \
+       "$ZIVPN_CFG" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+    mv "$tmp" "$ZIVPN_CFG" 2>/dev/null || { rm -f "$tmp"; return 0; }
+    systemctl restart zivpn >/dev/null 2>&1 || true
+  else
+    rm -f "$tmp" 2>/dev/null || true
+  fi
+  return 0
+}
+
+# hapus username dari password ZiVPN (jaga minimal "zivpn")
+_zivpn_del() {
+  local user="${1:-}"
+  [ -z "$user" ] && return 0
+  [[ "$user" =~ ^[a-zA-Z0-9_.-]+$ ]] || return 0
+  [ -f "$ZIVPN_CFG" ] && command -v jq >/dev/null 2>&1 || return 0
+  local tmp
+  tmp=$(mktemp) || return 0
+  if jq --arg pass "$user" \
+       '.auth.config -= [$pass] | if (.auth.config | length) == 0 then .auth.config = ["zivpn"] else . end' \
+       "$ZIVPN_CFG" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+    mv "$tmp" "$ZIVPN_CFG" 2>/dev/null || { rm -f "$tmp"; return 0; }
+    systemctl restart zivpn >/dev/null 2>&1 || true
+  else
+    rm -f "$tmp" 2>/dev/null || true
+  fi
+  return 0
 }
 __EMBED_EOF__
 chmod 644 "$ETC/lib/ssh_helpers.sh"
@@ -9564,6 +9610,132 @@ else
 fi
 __EMBED_EOF__
 chmod 755 "$ETC/setup/tlsmux.sh"
+cat > "$ETC/setup/zivpn.sh" << '__EMBED_EOF__'
+#!/bin/bash
+# mytunnel setup/zivpn.sh - ZiVPN UDP server (binary resmi zahidbd2/udp-zivpn)
+# Port listen 5667; iptables NAT redirect UDP 6000-19999 -> 5667.
+# shellcheck disable=SC1091,SC1090
+set -e
+BASE="${MYTUNNEL_PREFIX:-}"
+ETC="${BASE}/etc/mytunnel"
+LOG="${BASE}/var/log/mytunnel.log"
+for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
+RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"; CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+die(){ echo -e "${RED}✗ $1${RESET}" | tee -a "$LOG" 2>/dev/null || true; echo -e "${YELLOW}Penyebab: $2${RESET}" >&2; exit 1; }
+_log(){ echo "[$(date '+%Y-%m-%d %H:%M:%S')] zivpn: $1" >> "$LOG" 2>/dev/null || true; }
+
+ZIV_VER="udp-zivpn_1.4.9"
+ZIV_DIR="/etc/zivpn"
+ZIV_BIN="/usr/local/bin/zivpn"
+ZIV_CFG="$ZIV_DIR/config.json"
+
+# TEST MODE: hanya simulasi (prefix diset)
+if [ -n "$BASE" ]; then
+  echo -e "${YELLOW}[TEST MODE] Simulasi setup zivpn${RESET}"
+  mkdir -p "${BASE}${ZIV_DIR}" 2>/dev/null || true
+  echo "zivpn simulated" > "${BASE}${ZIV_DIR}/zivpn-sim.log" 2>/dev/null || true
+  exit 0
+fi
+
+# dependensi
+command -v jq >/dev/null 2>&1 || apt-get install -y jq >/dev/null 2>&1 || true
+command -v jq >/dev/null 2>&1 || die "jq tidak tersedia" "Cek: apt-get install -y jq"
+command -v openssl >/dev/null 2>&1 || apt-get install -y openssl >/dev/null 2>&1 || true
+command -v openssl >/dev/null 2>&1 || die "openssl tidak tersedia" "Cek: apt-get install -y openssl"
+
+mkdir -p "$ZIV_DIR"
+
+# 1) binary sesuai arsitektur
+if [ ! -x "$ZIV_BIN" ]; then
+  _arch="$(uname -m)"
+  case "$_arch" in
+    x86_64)  _url="https://github.com/zahidbd2/udp-zivpn/releases/download/${ZIV_VER}/udp-zivpn-linux-amd64" ;;
+    aarch64) _url="https://github.com/zahidbd2/udp-zivpn/releases/download/${ZIV_VER}/udp-zivpn-linux-arm64" ;;
+    *) die "Arsitektur tidak didukung: $_arch" "ZiVPN menyediakan binary amd64/arm64 saja" ;;
+  esac
+  echo -e "${CYAN}Unduh ZiVPN (${_arch})...${RESET}"
+  curl -fsSL --max-time 120 "$_url" -o "$ZIV_BIN" 2>/dev/null \
+    || wget -q --timeout=120 -O "$ZIV_BIN" "$_url" 2>/dev/null \
+    || die "Unduh binary ZiVPN gagal" "Cek koneksi ke github.com/zahidbd2/udp-zivpn (release ${ZIV_VER})"
+  chmod +x "$ZIV_BIN"
+  [ -x "$ZIV_BIN" ] || die "Binary zivpn tidak bisa dieksekusi" "Cek $ZIV_BIN"
+  _log "binary zivpn terpasang (${_arch})"
+else
+  echo -e "${GREEN}ZiVPN sudah terpasang: $ZIV_BIN${RESET}"
+fi
+
+# 2) sertifikat self-signed 10 tahun
+if [ ! -f "$ZIV_DIR/zivpn.crt" ] || [ ! -f "$ZIV_DIR/zivpn.key" ]; then
+  echo -e "${CYAN}Buat sertifikat self-signed ZiVPN (10 tahun)...${RESET}"
+  openssl req -new -newkey rsa:2048 -days 3650 -nodes -x509 \
+    -subj "/C=ID/ST=Jakarta/L=Jakarta/O=VPN/CN=zivpn" \
+    -keyout "$ZIV_DIR/zivpn.key" -out "$ZIV_DIR/zivpn.crt" >/dev/null 2>&1 \
+    || die "Gagal membuat sertifikat ZiVPN" "Cek openssl dan izin tulis $ZIV_DIR"
+  chmod 600 "$ZIV_DIR/zivpn.key" 2>/dev/null || true
+  chmod 644 "$ZIV_DIR/zivpn.crt" 2>/dev/null || true
+  _log "sertifikat zivpn dibuat (10 tahun)"
+fi
+
+# 3) config.json
+if [ ! -f "$ZIV_CFG" ]; then
+  echo -e "${CYAN}Tulis config ZiVPN ($ZIV_CFG)...${RESET}"
+  cat > "$ZIV_CFG" <<JSON_EOF
+{
+  "listen": ":5667",
+  "cert": "${ZIV_DIR}/zivpn.crt",
+  "key": "${ZIV_DIR}/zivpn.key",
+  "obfs": "zivpn",
+  "auth": {
+    "mode": "passwords",
+    "config": ["zivpn"]
+  }
+}
+JSON_EOF
+  chmod 644 "$ZIV_CFG" 2>/dev/null || true
+  _log "config zivpn ditulis (password default: zivpn)"
+fi
+
+# 4) systemd unit
+cat > /etc/systemd/system/zivpn.service <<'UNIT_EOF'
+[Unit]
+Description=ZiVPN UDP Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/etc/zivpn
+ExecStart=/usr/local/bin/zivpn server -c /etc/zivpn/config.json
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+UNIT_EOF
+chmod 644 /etc/systemd/system/zivpn.service
+
+systemctl daemon-reload 2>/dev/null || true
+systemctl enable --now zivpn >/dev/null 2>&1 || true
+
+# 5) iptables NAT: redirect UDP 6000-19999 -> 5667
+if command -v iptables >/dev/null 2>&1; then
+  iptables -t nat -C PREROUTING -p udp --dport 6000:19999 -j REDIRECT --to-ports 5667 2>/dev/null || \
+    iptables -t nat -A PREROUTING -p udp --dport 6000:19999 -j REDIRECT --to-ports 5667
+  iptables -C INPUT -p udp --dport 5667 -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport 5667 -j ACCEPT
+  iptables -C INPUT -p udp --dport 6000:19999 -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport 6000:19999 -j ACCEPT
+  command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save >/dev/null 2>&1 || true
+fi
+
+sleep 1
+if systemctl is-active --quiet zivpn 2>/dev/null; then
+  echo -e "${GREEN}✓ ZiVPN UDP aktif (listen :5667, redirect UDP 6000-19999)${RESET}"
+  _log "zivpn aktif"
+else
+  echo -e "${YELLOW}! ZiVPN terpasang tapi belum aktif${RESET}"
+  echo -e "${YELLOW}  cek: systemctl status zivpn ; journalctl -u zivpn -n 20${RESET}"
+fi
+__EMBED_EOF__
 cat > "$ETC/cron/autoexpire.sh" << '__EMBED_EOF__'
 #!/bin/bash
 # mytunnel cron/autoexpire.sh - hapus/kunci akun SSH lewat expiry harian 00:00
@@ -9605,6 +9777,8 @@ main() {
       else
         pkill -u "$user" 2>/dev/null || true
         userdel -r "$user" 2>/dev/null || userdel "$user" 2>/dev/null || true
+        # ZiVPN UDP: cabut username kedaluwarsa dari password list (jaga minimal "zivpn")
+        _zivpn_del "$user"
       fi
       # remove from DB copy (defer)
     fi
@@ -16785,6 +16959,12 @@ echo -e "${CYAN}[11/13] Setup SSH-WS...${RESET}"
 _log "[11/13] sshws"
 if ! _mt_step bash "$ETC/setup/sshws.sh"; then
   _fail "Setup SSH-WS gagal" "Cek $ETC/setup/sshws.sh dan $LOG"
+fi
+
+echo -e "${CYAN}Setup UDP ZiVPN...${RESET}"
+_log "setup zivpn"
+if ! _mt_step bash "$ETC/setup/zivpn.sh"; then
+  echo -e "${YELLOW}Setup ZiVPN gagal, lanjut (cek $ETC/setup/zivpn.sh dan $LOG)${RESET}" | tee -a "$LOG" 2>/dev/null || true
 fi
 
 echo -e "${CYAN}[12/13] Setup Cron SSH (autoexpire + limitip)...${RESET}"

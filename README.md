@@ -131,3 +131,16 @@ git config core.hooksPath .githooks
 ```
 
 > Pakai hanya di VPS milik sendiri. Penulis tidak bertanggung jawab atas sanksi provider.
+
+## ZiVPN UDP (integrasi SSH)
+
+Server ZiVPN UDP dipasang otomatis oleh installer (`setup/zivpn.sh`, listen `:5667`,
+redirect iptables UDP `6000-19999` -> `5667`). Tidak ada menu terpisah: **username SSH
+otomatis menjadi password ZiVPN** saat akun SSH/Trial dibuat, dan otomatis dicabut saat
+akun dihapus atau kedaluwarsa (cron xp). User cukup memakai Host/Domain server +
+username SSH-nya sebagai password di aplikasi UDP ZiVPN. Password bawaan `zivpn` selalu
+dipertahankan agar array auth tak pernah kosong. Output SSH tak diubah.
+
+## Port UDP Tambahan
+- 5667/udp     : ZiVPN (listen)
+- 6000-19999/udp : ZiVPN (redirect -> 5667)

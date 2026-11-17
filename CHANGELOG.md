@@ -1,3 +1,37 @@
+## v1.13.0 — 2026-11-18 — Integrasi ZiVPN UDP ke sistem akun SSH
+
+Tambah protokol **ZiVPN UDP** tanpa menu terpisah, terintegrasi langsung ke pembuatan
+akun SSH yang sudah ada.
+
+### Instalasi (`setup/zivpn.sh`)
+- Unduh binary resmi zahidbd2/udp-zivpn 1.4.9 sesuai arsitektur (amd64/arm64) ->
+  `/usr/local/bin/zivpn` (chmod +x).
+- Sertifikat self-signed 10 tahun -> `/etc/zivpn/zivpn.{crt,key}`.
+- `/etc/zivpn/config.json` (listen `:5667`, auth mode passwords, password default `zivpn`).
+- Unit systemd `/etc/systemd/system/zivpn.service` (Restart=always, LimitNOFILE=65535)
+  -> `systemctl enable --now zivpn`.
+- iptables NAT: redirect UDP `6000-19999` -> `5667` + ACCEPT `5667`/`6000-19999`,
+  lalu `netfilter-persistent save`. `-C` dulu sebelum `-A/-I` agar idempotent.
+
+### Integrasi otomatis
+- `ssh_helpers.sh` dapat helper `_zivpn_add <user>` & `_zivpn_del <user>` (pakai jq,
+  diam bila zivpn/jq tak terpasang, validasi nama user agar tak bisa injeksi JSON,
+  `mktemp` + restart service).
+- `_zivpn_add` dipanggil di `ssh_create` -> **mencakup SSH manual & Trial SSH** (keduanya
+  lewat `ssh_create`).
+- `_zivpn_del` dipanggil di `ssh_delete` **dan** di cron `autoexpire.sh` (user kedaluwarsa).
+- Hapus selalu jaga minimal `["zivpn"]` agar array auth tak kosong.
+
+### Output
+- **Tidak diubah** — 100% format `print_ssh_account_info` asli, tanpa kotak ZiVPN baru.
+  User cukup pakai Host + username SSH sebagai password di aplikasi UDP ZiVPN.
+
+### Verifikasi live (VPS 43.128.104.92)
+- ZiVPN aktif (listen :5667), NAT redirect UDP 6000-19999 terpasang.
+- Uji end-to-end: `ssh_create zivpntest` -> masuk `config.json` (count 1->2);
+  `ssh_delete zivpntest` -> tercabut (count 2->1); minimal `zivpn` tetap ada;
+  service tetap `active`. `bash -n` OK install.sh, ssh_helpers.sh, zivpn.sh.
+
 ## v1.12.0 — 2026-11-18 — SELURUH pesan notif kini mono (garis, judul, label, nilai)
 
 User memilih opsi A: SEMUA teks & symbol dalam notif Create/Trial harus MONO,
