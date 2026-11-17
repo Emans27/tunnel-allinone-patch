@@ -1,3 +1,21 @@
+## v1.12.0 — 2026-11-18 — SELURUH pesan notif kini mono (garis, judul, label, nilai)
+
+User memilih opsi A: SEMUA teks & symbol dalam notif Create/Trial harus MONO,
+tanpa kecuali. Sebelumnya hanya nilai yang mono (label kiri, garis pemisah
+`————`, dan judul `SSH/Dropbear`/`OpenVPN`/`VMESS WS TLS` masih plain).
+
+`ah_notify_admin_mono` kini membungkus **setiap baris** (termasuk garis
+pemisah, judul blok, dan label) ke `<code>...</code>` — baris kosong tetap
+jadi pemisah. Tanpa `<pre>`; semua di-escape `html.escape()`.
+
+Konsisten untuk SSH, VMess, VLESS, Trojan. Grouping tetap via python3
+(aman UTF-8; `LC_ALL=C awk` merusak em-dash). Garis pemisah tetap 32 em-dash.
+
+Diverifikasi live di VPS (43.128.104.92, bot @Muesea_bot): render blok SSH
+-> 40 baris `<code>` + 3 baris kosong; kirim SSH & VMess ke Telegram sukses;
+`mytunnel-bot` active setelah restart; `bash -n` OK install.sh +
+advanced_helpers.sh.
+
 ## v1.11.10 — 2026-11-18 — Link protokol dicek dulu (utuh), sebelum aturan judul
 
 Bug pada v1.11.9: link `vmess://eyJ2Ij...` diproses oleh cabang label:nilai

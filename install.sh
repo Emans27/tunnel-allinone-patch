@@ -2153,36 +2153,15 @@ ah_notify_admin_mono(){
   # SATU blok <code> (mono sekaligus copy 1-ketuk per bagian). Grouping via python3
   # agar aman UTF-8 (awk + LC_ALL=C merusak em-dash).
   esc=$(printf "%s" "$clean" | python3 -c '
-import sys, html, re
-def code(t): return "<code>" + html.escape(t) + "</code>"
-def issep(s):
-    st = s.strip()
-    return st == "" or (len(st) >= 3 and len(set(st)) == 1)
-LINK = ("vmess://", "vless://", "trojan://", "http://", "https://")
-HEADERS = ("SSH/DROPBEAR", "OPENVPN", "ACCOUNT CREATED SUCCESSFULLY")
-def is_link(s):
-    return s.strip().lower().startswith(LINK)
-def is_title(s):
-    st = s.strip()
-    if st == "": return False
-    if is_link(s): return False
-    if " : " in s: return False
-    up = st.upper().rstrip(":")
-    if up in HEADERS: return True
-    if st.lower().startswith("http"): return False
-    return True
+import sys, html
+out = []
 for line in sys.stdin.read().split("\n"):
     s = line.rstrip("\r")
-    if issep(s):
-        sys.stdout.write(s + "\n"); continue
-    if is_link(s):
-        sys.stdout.write(code(s.strip()) + "\n"); continue
-    if is_title(s):
-        sys.stdout.write(s + "\n"); continue
-    m = re.match(r"^([^:]{1,30}):(\s*)(.+)$", s)
-    if m and "://" not in m.group(1):
-        sys.stdout.write(m.group(1) + ":" + m.group(2) + code(m.group(3).strip()) + "\n"); continue
-    sys.stdout.write(code(s.strip()) + "\n" if s.strip() else "\n")
+    if s.strip() == "":
+        out.append("")
+    else:
+        out.append("<code>" + html.escape(s) + "</code>")
+sys.stdout.write("\n".join(out))
   ')
   done)
   curl -4 -fsS --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -d "chat_id=${ADMIN_ID}" -d "parse_mode=HTML" --data-urlencode "text=${esc}" >/dev/null 2>&1 || {
