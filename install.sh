@@ -2154,15 +2154,30 @@ ah_notify_admin_mono(){
   # agar aman UTF-8 (awk + LC_ALL=C merusak em-dash).
   esc=$(printf "%s" "$clean" | python3 -c '
 import sys, html
-buf, out = [], []
+def code(t): return "<code>" + html.escape(t) + "</code>"
+def issep(s):
+    st = s.strip()
+    return st == "" or (len(st) >= 3 and len(set(st)) == 1)
+# judul = baris ter-centang (indentasi besar) ATAU mengandung kata header ini
+def is_title(s):
+    st = s.strip()
+    return (s != st and st != "") or st.upper() in (
+        "SSH/DROPBEAR", "OPENVPN", "ACCOUNT CREATED SUCCESSFULLY")
 for line in sys.stdin.read().split("\n"):
-    s = line.rstrip("\r"); stripped = s.strip()
-    if stripped == "" or (len(stripped) >= 3 and len(set(stripped)) == 1):
-        if buf: out.append("<code>" + html.escape("\n".join(buf)) + "</code>"); buf = []
-        continue
-    buf.append(s)
-if buf: out.append("<code>" + html.escape("\n".join(buf)) + "</code>")
-sys.stdout.write("\n".join(out))
+    s = line.rstrip("\r")
+    if issep(s):
+        sys.stdout.write(s + "\n"); continue
+    if is_title(s):
+        sys.stdout.write(s + "\n"); continue
+    # pisahkan label dari nilai HANYA pada pemisah " : " pertama,
+    # dengan label yang tidak mengandung karakter payload ( [ ]
+    if " : " in s:
+        lab, val = s.split(" : ", 1)
+        # label sah = tanpa "[", "]", "(", "/" berlebih (hindari payload)
+        if "[" not in lab and "]" not in lab and val.strip() != "":
+            sys.stdout.write(lab + " : " + code(val) + "\n"); continue
+    # baris tanpa label -> nilai penuh (link/uuid/login cepat) dibungkus <code>
+    sys.stdout.write(code(s) + "\n" if s.strip() else "\n")
   ')
   done)
   curl -4 -fsS --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -d "chat_id=${ADMIN_ID}" -d "parse_mode=HTML" --data-urlencode "text=${esc}" >/dev/null 2>&1 || {

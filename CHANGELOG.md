@@ -1,3 +1,28 @@
+## v1.11.6 — 2026-11-18 — ATURAN FORMAT notif: hanya nilai di-<code>, label plain
+
+Menerapkan aturan format eksplisit untuk `ah_notify_admin_mono` (parse_mode=HTML):
+
+- **HANYA nilai yang perlu disalin** dibungkus `<code>` — baris SSH
+  WS/SSL/UDP/SLOWDNS (`host:port@user:pass`), HOST, NameServer, Username,
+  Password, PUB Key, Payload WS, Payload ENHANCED, link OpenVPN.
+- **Label di kiri** (SSH WS, HOST, Username, TLS, ...) **tetap teks biasa**,
+  tidak dibungkus tag.
+- **Judul blok tetap plain**: `SSH/Dropbear`, `OpenVPN`,
+  `Account Created Successfully` (dideteksi dari indentasi besar / daftar
+  header) — tidak di-`<code>` karena bukan nilai copyable.
+- **Tanpa `<pre>`** untuk seluruh pesan.
+- **Semua nilai dinamis di-escape** `html.escape()` supaya karakter `<`, `>`,
+  `&` pada password/payload tidak merusak pesan (mis. password `pa&ss<word>`
+  dikirim sebagai `pa&amp;ss&lt;word&gt;`).
+- Helper `code(t)` dibuat agar pembungkusan tidak berulang.
+
+Pemisahan label-nilai hanya pada pemisah ` : ` pertama, dengan syarat label
+tidak memuat `[`/`]` (agar payload `[crlf]`/`[host]` tidak salah dipotong).
+
+Diverifikasi live di VPS (43.128.104.92, bot @Muesea_bot): render SSH → label
+plain + nilai `<code>`, judul plain, escape teruji; kirim nyata sukses;
+`mytunnel-bot` active; `bash -n` OK install.sh + advanced_helpers.sh.
+
 ## v1.11.5 — 2026-11-18 — Blok akun Telegram dikelompokkan PER BAGIAN (copy 1-ketuk per bagian)
 
 Setelah dicek di Telegram: per-baris `<code>` tidak memberi copy 1-ketuk untuk
