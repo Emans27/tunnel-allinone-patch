@@ -6638,7 +6638,7 @@ STUB
   [ "$_ok" = "1" ] || die "Unduh Dropbear 2019.78 gagal/checksum salah" "Cek koneksi ke matt.ucc.asn.au atau dropbear.nl"
   tar -xjf "$_dbtmp/db.tar.bz2" -C "$_dbtmp" 2>/dev/null || die "Extract Dropbear gagal" "Cek arsip di $_dbtmp"
   ( cd "$_dbtmp/dropbear-2019.78" \
-      && CFLAGS="${db_cflags:--O2}" ./configure --prefix=/usr/local --sysconfdir=/etc/dropbear >/dev/null 2>&1 \
+      && CFLAGS="-O2 ${db_cflags} -Wno-error -Wno-unused-result" ./configure --prefix=/usr/local --sysconfdir=/etc/dropbear >/dev/null 2>&1 \
       && make -j"$(nproc)" PROGRAMS="dropbear dropbearkey dbclient" >/dev/null 2>&1 ) \
       || die "Build Dropbear 2019.78 gagal" "Cek build-essential/gcc zlib1g-dev; coba manual di $_dbtmp"
   [ -x "$_dbtmp/dropbear-2019.78/dropbear" ] || die "Binary dropbear tidak dihasilkan" "Cek $_dbtmp/dropbear-2019.78"

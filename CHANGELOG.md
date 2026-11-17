@@ -1,3 +1,24 @@
+## v1.10.7 — 2026-11-17 — CFLAGS build Dropbear disamakan dengan installer proven (anti -Werror)
+
+`install_dropbear()` membangun Dropbear 2019.78 dengan `CFLAGS="-O2 ${db_cflags}"`
+saja (`-fcommon` otomatis bila GCC >= 10). Dua flag yang membuat build yang
+sudah terbukti nyala di VPS produksi tetap bertahan hilang:
+
+- `-Wno-error` — GCC baru (11/12) mempromosikan sejumlah warning Dropbear 2019
+  menjadi error, build gagal walau kode valid.
+- `-Wno-unused-result` — `write()`/`read()` di Dropbear 2019 memicu warning
+  `_FORTIFY_SOURCE` yang ikut jadi error bila `-Werror` aktif.
+
+Keduanya ditambahkan ke `./configure` agar build Dropbear sama tangguhnya
+dengan installer proven (`install-full-vpn.sh` di tunnel-bot). `-fcommon`
+tetap ditambahkan otomatis pada GCC >= 10 (GCC 11 default `-fno-common`
+menghasilkan binary rusak). `dropbearconvert`/`scp` tidak ditambahkan ke
+`PROGRAMS` karena repo ini tidak memakai keduanya (sudah diverifikasi:
+tanpa referensi `scp`/`dropbearconvert` di seluruh `install.sh`).
+
+Verifikasi: `bash -n` bersih, satu-satunya `./configure` build Dropbear,
+syntax OK, SHA256SUMS diregenerasi.
+
 ## v1.10.6 — 2026-11-17 — Enam titik `| tee` yang membungkam exit code + chmod cert salah variabel
 
 `perintah | tee` selalu mengembalikan status `tee` (0). Semua pengecekan
