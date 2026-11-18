@@ -8222,6 +8222,9 @@ _gen_certs(){
 
 _write_server_conf(){
   local proto="$1" port="$2" dev="$3" ovpn_dir pam_plugin domain www_root
+  # "ssl"/"dns" hanya NAMA PROFIL, bukan protokol OpenVPN. Map ke protokol valid.
+  local ovpn_proto="$proto"
+  case "$proto" in ssl) ovpn_proto="tcp" ;; dns) ovpn_proto="udp" ;; esac
   ovpn_dir=$(_ovpn_dir)
   domain=$(_get_domain)
   pam_plugin=$(_find_pam_plugin)
@@ -8240,7 +8243,7 @@ _write_server_conf(){
   cat > "$conf" <<CFG_EOF
 # mytunnel openvpn $proto $port - managed by mytunnel
 port $port
-proto $proto
+proto $ovpn_proto
 dev $dev
 ca $ovpn_dir/ca.crt
 cert $ovpn_dir/server.crt
@@ -9851,6 +9854,33 @@ main() {
   }
   rm -f "$tmp" "$filtered" "$exp_tmp" 2>/dev/null || true
 }
+# Rekonsiliasi ZiVPN: buang password yang user sistemnya sudah tidak ada.
+# Semua jalur hapus (create gagal, trial, hapus manual bot/menu, xp) pasti
+# meninggalkan sisa kalau tidak dibersihkan terpusat di sini.
+_zivpn_reconcile(){
+  [ -f /etc/zivpn/config.json ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  local ghost
+  ghost=$(jq -r '.auth.config[]' /etc/zivpn/config.json 2>/dev/null | while IFS= read -r u; do
+    [ "$u" = "zivpn" ] && continue
+    id "$u" >/dev/null 2>&1 || echo "$u"
+  done)
+  [ -z "$ghost" ] && return 0
+  local tmp; tmp=$(mktemp)
+  printf '%s\n' "$ghost" > "$tmp"
+  jq --rawfile g "$tmp" '
+    ($g | split("\n") | map(select(length>0))) as $ghosts
+    | .auth.config |= (map(select(. as $x | ($ghosts | index($x)) == null)))
+    | if (.auth.config | length) == 0 then .auth.config = ["zivpn"] else . end
+  ' /etc/zivpn/config.json > /tmp/zivpn_recon.json 2>/dev/null \
+    && mv /tmp/zivpn_recon.json /etc/zivpn/config.json 2>/dev/null \
+    && systemctl restart zivpn >/dev/null 2>&1
+  rm -f "$tmp" 2>/dev/null || true
+  local LOGZ="${LOG:-/var/log/mytunnel.log}"
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] zivpn-reconcile: hapus $(printf '%s' "$ghost" | tr '\n' ' ')" >> "$LOGZ" 2>/dev/null || true
+}
+_zivpn_reconcile
+
 main "$@"
 __EMBED_EOF__
 chmod 755 "$ETC/cron/autoexpire.sh"
@@ -13206,12 +13236,12 @@ while true; do
   echo -e "${BLUE}│${RESET} x.) Exit                                           ${BLUE}│${RESET}"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo -ne "${BOLD}Select From Options [1-2 or x] : ${RESET}"
-  read -r c
+  read -r c || break
   case "$c" in
     1)
       echo ""
       echo -ne "${CYAN}Set lock time (1-1440 menit, kosongkan batal) [${cur}]: ${RESET}"
-      read -r inp
+      read -r inp || continue
       [ -z "$inp" ] && continue
       inp=$(echo "$inp" | tr -d ' ')
       if ! [[ "$inp" =~ ^[0-9]+$ ]] || [ "$inp" -lt 1 ] || [ "$inp" -gt 1440 ]; then echo -e "${RED}Harus angka 1-1440${RESET}"; sleep 1; continue; fi
@@ -13356,7 +13386,7 @@ main() {
     echo -e "${BLUE}│${RESET} 2.) Reboot sekarang                              ${BLUE}│${RESET}"
     echo -e "${BLUE}│${RESET} 3.) Kembali                                      ${BLUE}│${RESET}"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
-    read -rp " Pilih [1-3]: " c 2>/dev/null || c=3
+    read -rp " Pilih [1-4]: " c 2>/dev/null || c=4
     case "$c" in 1) set_schedule ;; 2) do_reboot_now ;; 3) break ;; *) echo -e "${RED}Tidak valid${RESET}"; sleep 1 ;; esac
   done
 }
@@ -13774,7 +13804,7 @@ main() {
     echo -e "${BLUE}│${RESET} 2.) Restore dari backup                          ${BLUE}│${RESET}"
     echo -e "${BLUE}│${RESET} 3.) Kembali                                      ${BLUE}│${RESET}"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
-    read -rp " Pilih [1-3]: " c 2>/dev/null || c=3
+    read -rp " Pilih [1-4]: " c 2>/dev/null || c=4
     case "$c" in 1) do_backup ;; 2) do_restore ;; 3) break ;; *) echo -e "${RED}Tidak valid${RESET}"; sleep 1;; esac
   done
 }
@@ -14152,7 +14182,7 @@ main() {
     echo -e "${BLUE}│${RESET} 3.) Jadikan banner permanen (chattr +i)            ${BLUE}│${RESET}"
     echo -e "${BLUE}│${RESET} 4.) Kembali                                       ${BLUE}│${RESET}"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
-    read -rp " Pilih [1-3]: " c 2>/dev/null || c=3
+    read -rp " Pilih [1-4]: " c 2>/dev/null || c=4
     case "$c" in 1) edit_banner ;; 2) edit_response ;; 3) if command -v bg_enforce >/dev/null 2>&1; then bg_enforce 2>/dev/null; echo -e "${GREEN}Status: $(bg_status 2>/dev/null)${RESET}"; pause; else echo -e "${YELLOW}banner_guard tidak tersedia${RESET}"; pause; fi ;; 4) break ;; *) echo -e "${RED}Tidak valid${RESET}"; sleep 1;; esac
   done
 }
@@ -14633,7 +14663,7 @@ main() {
     echo -e "${BLUE}│${RESET} 2.) Atur URL repo                                 ${BLUE}│${RESET}"
     echo -e "${BLUE}│${RESET} 3.) Kembali                                       ${BLUE}│${RESET}"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
-    read -rp " Pilih [1-3]: " c 2>/dev/null || c=3
+    read -rp " Pilih [1-4]: " c 2>/dev/null || c=4
     case "$c" in 1) check_update ;; 2) set_repo ;; 3) break ;; *) echo -e "${RED}Tidak valid${RESET}"; sleep 1;; esac
   done
 }
@@ -15773,7 +15803,8 @@ check_proto() {
   while IFS='|' read -r user _uuid exp _rest; do  # SC2034: only user needed
     [ -z "$user" ] && continue
     total=$((total+1))
-    cnt=$(jq --arg email "$user" --arg prefix "$proto" '[.inbounds[] | select(.tag | startswith($prefix)) | .settings.clients[]? | select(.email==$email)] | length' "$XRAY_CFG" 2>/dev/null || echo 0)
+    # email di Xray berformat "<user>-<proto>@tunnel", bukan "<user>" saja.
+    cnt=$(jq --arg email "$user-" --arg prefix "$proto" '[.inbounds[] | select(.tag | startswith($prefix)) | .settings.clients[]? | select(.email | startswith($email))] | length' "$XRAY_CFG" 2>/dev/null || echo 0)
     if [ "$cnt" -eq 0 ]; then
       echo -e "  ${YELLOW}⚠ $user ada di db tapi HILANG di Xray${RESET} (exp $exp)"; miss_xray=$((miss_xray+1))
     elif [ "$cnt" -lt 3 ] 2>/dev/null; then
@@ -15782,7 +15813,8 @@ check_proto() {
   done < "$db"
   # reverse: Xray clients not in db
   local orphans
-  orphans=$(jq -r --arg prefix "$proto" '.inbounds[] | select(.tag | startswith($prefix)) | .settings.clients[]?.email // empty' "$XRAY_CFG" 2>/dev/null | sort -u)
+  # buang akhiran "-<proto>@tunnel" supaya bisa dibandingkan dengan kolom user di db
+  orphans=$(jq -r --arg prefix "$proto" '.inbounds[] | select(.tag | startswith($prefix)) | .settings.clients[]?.email // empty' "$XRAY_CFG" 2>/dev/null | sed -E 's/-[a-z]+@[^@]*$//' | sort -u)
   local orphan_cnt=0
   for email in $orphans; do
     [ -z "$email" ] && continue
@@ -15850,7 +15882,7 @@ main() {
   for p in vmess vless trojan; do check_proto "$p"; echo ""; done
   # also quick service check
   echo -e "${CYAN}[Service]${RESET}"
-  for s in xray nginx dropbear mytunnel-sshws squid mytunnel-udpgw mytunnel-ohp-ssh mytunnel-openvpn-tcp mytunnel-slowdns mytunnel-udp-custom mytunnel-bot; do
+  for s in xray nginx dropbear mytunnel-sshws squid mytunnel-udpgw mytunnel-ohp-ssh mytunnel-openvpn-tcp mytunnel-slowdns udp-custom mytunnel-bot; do
     if [ -n "$BASE" ]; then
       [ -f "$BASE/etc/systemd/system/${s}.service.sim" ] && echo -e "  $s: ${GREEN}sim ON${RESET}" || echo -e "  $s: ${DIM}sim OFF${RESET}"
     else
@@ -15939,7 +15971,7 @@ if [ -n "$MYTUNNEL_PREFIX" ]; then typed="hapus"; echo "hapus (auto test)"; else
 if [ "$typed" != "hapus" ]; then echo "Batal."; exit 0; fi
 
 echo -e "\n${CYAN}[1/7] Stop & disable service...${RESET}"
-services="xray nginx dropbear mytunnel-sshws squid mytunnel-udpgw mytunnel-ohp-ssh mytunnel-ohp-ovpn mytunnel-openvpn-tcp mytunnel-openvpn-udp mytunnel-openvpn-ssl slowdns mytunnel-udp-custom mytunnel-bot"
+services="xray nginx dropbear mytunnel-sshws squid mytunnel-udpgw mytunnel-ohp-ssh mytunnel-ohp-ovpn mytunnel-openvpn-tcp mytunnel-openvpn-udp mytunnel-openvpn-ssl mytunnel-slowdns udp-custom mytunnel-bot"
 for s in $services; do
   if [ -n "$BASE" ]; then
     rm -f "$BASE/etc/systemd/system/${s}.service.sim" "$BASE/etc/systemd/system/${s}.service" 2>/dev/null || true
@@ -17089,7 +17121,7 @@ echo -e "    ${YELLOW}mytunnel-doctor${RESET}  # cek konsistensi db vs Xray vs s
 echo ""
 if command -v systemctl >/dev/null 2>&1 && [ -z "$BASE" ]; then
   echo -e "${CYAN}Status service:${RESET}"
-  for s in xray nginx dropbear mytunnel-sshws mytunnel-bot squid mytunnel-udpgw mytunnel-ohp-ssh slowdns mytunnel-udp-custom mytunnel-openvpn-tcp; do systemctl is-active "$s" 2>/dev/null | xargs -I{} echo "  $s : {}" || echo "  $s : OFF/unknown"; done
+  for s in xray nginx dropbear mytunnel-sshws mytunnel-bot squid mytunnel-udpgw mytunnel-ohp-ssh mytunnel-slowdns udp-custom mytunnel-openvpn-tcp; do systemctl is-active "$s" 2>/dev/null | xargs -I{} echo "  $s : {}" || echo "  $s : OFF/unknown"; done
 else
   echo -e "${CYAN}[TEST MODE] Cek file:${RESET}"
   ls -lh "$ETC/cert/fullchain.crt" "$ETC/cert/private.key" 2>&1 | sed 's/^/  /'

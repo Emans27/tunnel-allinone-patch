@@ -1,3 +1,49 @@
+## v1.13.8 — 2026-11-19 — Audit menyeluruh fitur: 5 bug nyata diperbaiki
+
+Audit eksekusi nyata (bukan statis) seluruh menu/features/advanced/cron.
+
+### 1. `features/banner.sh` — infinite loop saat stdin EOF
+`read -rp " Pilih [1-3]: " c 2>/dev/null || c=3` jatuh ke opsi **3** (aksi),
+bukan keluar. Bila stdin tertutup (dipanggil dari script/cron/SSH non-interaktif),
+menu berputar tanpa henti: terukur **20.451 baris** output sebelum timeout.
+Fix: `|| c=4` (keluar) + label `[1-3]` -> `[1-4]`.
+
+### 2. `features/lock_time.sh` — hang saat stdin EOF
+`read -r c` dan `read -r inp` tanpa guard; EOF membuat loop `while true` berputar
+selamanya (rc=124). Fix: `read -r c || break`, `read -r inp || continue`.
+
+### 3. `setup/openvpn.sh` — `proto ssl` bikin crash-loop 7078 restart
+`_write_server_conf` memakai `$proto` mentah sebagai direktif `proto`. "ssl" dan
+"dns" hanya **nama profil**, bukan protokol OpenVPN yang sah, sehingga
+`Options error: Bad protocol: 'ssl'` dan unit restart terus-menerus.
+Fix: map `ssl -> tcp`, `dns -> udp` sebelum menulis config.
+Hasil: `mytunnel-openvpn-ssl` aktif, port 442 listen.
+
+### 4. ZiVPN — akumulasi password hantu
+Password akun yang sudah dihapus tidak selalu dicabut (jalur hapus trial/create
+gagal tidak melewati `_zivpn_del`). Ditemukan 7 sisa akun trial mati dari 9 entri.
+Fix: `_zivpn_reconcile()` di akhir `cron/autoexpire.sh` — satu titik yang membuang
+semua password yang user sistemnya sudah tidak ada, idempoten, jaga minimal "zivpn".
+
+### 5. `menu/doctor.sh` — tiga laporan salah
+- Cek unit `mytunnel-udp-custom` (nama tak ada) -> selalu "OFF"; unit nyata `udp-custom`.
+  Diperbaiki juga di `verify.sh` dan daftar service lain (`slowdns` -> `mytunnel-slowdns`).
+- Bandingkan `email == user`, padahal email Xray berformat `<user>-<proto>@tunnel` ->
+  akun sehat dilaporkan "HILANG di Xray" sekaligus "orphan". Fix: cocokkan prefix
+  `"$user-"` dan buang akhiran `-<proto>@tunnel` saat arah sebaliknya.
+
+### Verifikasi live (VPS 43.128.104.92)
+```
+18/18 service aktif
+banner :90 dropbear_2019.78 | :444 OpenSSH (admin) | :443 dropbear_2019.78
+WS     :80/8080/2082/2083/8880 semua dropbear_2019.78 (dari IP publik)
+SSH create/delete + zivpn add/del: lulus, sisa 10 -> 9, default "zivpn" tetap
+Xray vmess/vless/trojan add/del: lulus, config tetap "Configuration OK"
+OpenVPN .ovpn unduh :81 -> HTTP 200, 4 profil + ca.crt
+doctor: SSH/vmess konsisten, semua service ON
+Fitur EOF: 12/12 keluar bersih (rc=0, tanpa loop)
+```
+
 ## v1.13.7 — 2026-11-18 — Port 80 tak konek: httpmux jalan kode lama (belum restart)
 
 Setelah v1.13.6 (`SSH_PORT=22` -> `90`), port **80 tetap menampilkan OpenSSH**
