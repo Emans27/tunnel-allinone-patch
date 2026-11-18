@@ -1,3 +1,27 @@
+## v1.13.3 — 2026-11-18 — Fix syntax error advanced_helpers.sh: notif tak pernah terkirim
+
+**Akar masalah sebenarnya.** `lib/advanced_helpers.sh` punya baris nyasar `done)`
+tepat setelah blok python3 di `ah_notify_admin_mono` (sisa edit format notif
+sebelumnya). Bash menolak memuat file karena syntax error di line 139, sehingga
+**`ah_notify_admin_mono` TIDAK PERNAH terdefinisi** — dan karena `set -e`/`|| true`
+di seluruh pemanggil notif, kegagalan ini **diam** (tidak terlihat di log).
+
+Akibatnya notif Create/Trial (via menu maupun bot) tidak pernah terkirim, meski
+token bot valid dan `sendMessage` manual sukses. Patch v1.13.2 (handler bot)
+masih diperlukan untuk jalur bot, tapi bukan penyebab utamanya.
+
+### Perbaikan
+- Hapus baris `done)` nyasar setelah penutup blok python3 (`')`) pada
+  `ah_notify_admin_mono` di embedded `advanced_helpers.sh`.
+- `bash -n advanced_helpers.sh` kini OK; fungsi `ah_notify_admin_mono` ter-load.
+
+### Verifikasi live (VPS 43.128.104.92, bot @Muesea_bot)
+- `source advanced_helpers.sh` -> `ah_notify_admin_mono` terdefinisi.
+- `_bh_notify_block` kirim notif -> OK; `bh_trial ssh` -> user trial dibuat +
+  log "notify mono:" tercatat (dua kali: pesan tes & blok trial).
+- Akun uji dibersihkan. `mytunnel-bot` active. `bash -n` OK install.sh,
+  advanced_helpers.sh, handlers.sh.
+
 ## v1.13.2 — 2026-11-18 — Notif Create/Trial kini terkirim saat akun dibuat VIA BOT
 
 Akar masalah: saat akun dibuat melalui **bot Telegram** (`/create_ssh`, `/trial`),

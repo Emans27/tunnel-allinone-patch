@@ -2209,7 +2209,6 @@ for line in sys.stdin.read().split("\n"):
         out.append("<code>" + html.escape(s) + "</code>")
 sys.stdout.write("\n".join(out))
   ')
-  done)
   curl -4 -fsS --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -d "chat_id=${ADMIN_ID}" -d "parse_mode=HTML" --data-urlencode "text=${esc}" >/dev/null 2>&1 || {
     curl -4 -fsS --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -d "chat_id=${ADMIN_ID}" --data-urlencode "text=${clean}" >/dev/null 2>&1 || true
   }
