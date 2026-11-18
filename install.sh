@@ -14917,7 +14917,7 @@ __EMBED_EOF__
 chmod 755 "$ETC/features/sysinfo_page.sh"
 cat > "$ETC/features/dropbear_version.sh" << '__EMBED_EOF__'
 #!/bin/bash
-# mytunnel features/dropbear_version.sh - ganti versi Dropbear (daftar dari config)
+# mytunnel features/dropbear_version.sh - ganti versi Dropbear (build from source)
 # shellcheck disable=SC1091,SC1090,SC2154
 BASE="${MYTUNNEL_PREFIX:-}"
 ETC="${BASE}/etc/mytunnel"
@@ -14930,48 +14930,169 @@ BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
 
 pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 
+# checksum sha256 rilis resmi; kosong = tak diverifikasi (versi lama/bukan rilis resmi)
+_sha256_of() {
+  case "$1" in
+    2019.78) echo "525965971272270995364a0eb01f35180d793182e63dd0b0c3eb0292291644a4" ;;
+    *) echo "" ;;
+  esac
+}
+
+_dl_dropbear() {
+  # $1 = versi, $2 = target file
+  local ver="$1" out="$2" m url
+  for m in "https://matt.ucc.asn.au/dropbear/releases" "https://dropbear.nl/mirror/releases"; do
+    url="$m/dropbear-$ver.tar.bz2"
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL --max-time 120 "$url" -o "$out" 2>/dev/null && return 0
+    fi
+    if command -v wget >/dev/null 2>&1; then
+      wget -q --timeout=30 -O "$out" "$url" 2>/dev/null && return 0
+    fi
+  done
+  return 1
+}
+
+_build_dropbear() {
+  # $1 = versi. Hasil: /usr/local/sbin/dropbear-<major> + symlink + wrapper
+  local ver="$1"
+  local want_sha tmp ok=0 got dir
+  want_sha=$(_sha256_of "$ver")
+  tmp=$(mktemp -d) || { echo -e "${RED}mktemp gagal${RESET}"; return 1; }
+
+  echo -e "${DIM}Mengunduh dropbear-$ver.tar.bz2...${RESET}"
+  if ! _dl_dropbear "$ver" "$tmp/db.tar.bz2"; then
+    echo -e "${RED}Unduh gagal. Cek koneksi ke matt.ucc.asn.au / dropbear.nl${RESET}"
+    echo -e "${DIM}URL: https://matt.ucc.asn.au/dropbear/releases/dropbear-$ver.tar.bz2${RESET}"
+    rm -rf "$tmp" 2>/dev/null; return 1
+  fi
+  if [ -n "$want_sha" ]; then
+    got=$(sha256sum "$tmp/db.tar.bz2" 2>/dev/null | awk '{print $1}')
+    if [ "$got" != "$want_sha" ]; then
+      echo -e "${RED}Checksum SHA256 tidak cocok${RESET}"
+      echo -e "${DIM}  harap: $want_sha${RESET}"
+      echo -e "${DIM}  dapat: ${got:-?}${RESET}"
+      rm -rf "$tmp" 2>/dev/null; return 1
+    fi
+    echo -e "${GREEN}Checksum SHA256 cocok${RESET}"
+  else
+    echo -e "${DIM}Checksum untuk $ver tidak terdaftar, dilewati${RESET}"
+  fi
+
+  echo -e "${DIM}Extract...${RESET}"
+  if ! tar -xjf "$tmp/db.tar.bz2" -C "$tmp" 2>/dev/null; then
+    echo -e "${RED}Extract gagal (bzip2 terpasang?)${RESET}"
+    rm -rf "$tmp" 2>/dev/null; return 1
+  fi
+  dir=$(find "$tmp" -maxdepth 1 -type d -name "dropbear-$ver*" 2>/dev/null | head -1)
+  if [ -z "$dir" ] || [ ! -f "$dir/configure" ]; then
+    echo -e "${RED}Folder sumber dropbear-$ver tidak ditemukan${RESET}"
+    rm -rf "$tmp" 2>/dev/null; return 1
+  fi
+
+  # GCC 10+ default -fno-common -> dropbear lama gagal link tanpa -fcommon.
+  local db_cflags="" gccmaj
+  gccmaj=$(gcc -dumpversion 2>/dev/null | cut -d. -f1)
+  if [ -n "$gccmaj" ] && [ "$gccmaj" -ge 10 ] 2>/dev/null; then db_cflags="-fcommon"; fi
+
+  echo -e "${DIM}Build (gcc=${gccmaj:-?} cflags=${db_cflags:-default})...${RESET}"
+  if ! ( cd "$dir" && CFLAGS="-O2 ${db_cflags} -Wno-error -Wno-unused-result" \
+           ./configure --prefix=/usr/local --sysconfdir=/etc/dropbear >/dev/null 2>&1 \
+         && make -j"$(nproc)" PROGRAMS="dropbear dropbearkey dbclient" >/dev/null 2>&1 ); then
+    echo -e "${RED}Build gagal. Pastikan build-essential + zlib1g-dev terpasang.${RESET}"
+    echo -e "${DIM}Apt: apt-get install -y build-essential zlib1g-dev bzip2${RESET}"
+    rm -rf "$tmp" 2>/dev/null; return 1
+  fi
+  if [ ! -x "$dir/dropbear" ]; then
+    echo -e "${RED}Binary dropbear tidak dihasilkan${RESET}"
+    rm -rf "$tmp" 2>/dev/null; return 1
+  fi
+
+  # nama binary per versi supaya beberapa versi bisa hidup berdampingan
+  local tag; tag=$(echo "$ver" | cut -d. -f1)
+  install -m 755 "$dir/dropbear" "/usr/local/sbin/dropbear-$tag" || { rm -rf "$tmp"; return 1; }
+  install -m 755 "$dir/dropbearkey" "/usr/local/bin/dropbearkey-$tag" 2>/dev/null || true
+  ln -sf "/usr/local/sbin/dropbear-$tag" /usr/local/sbin/dropbear
+
+  # Wrapper /usr/sbin/dropbear (jalur init.d/systemd Debian) -> binary versi ini
+  if [ -f /usr/sbin/dropbear ] && [ ! -L /usr/sbin/dropbear ] && ! grep -q "exec /usr/local/sbin/dropbear-" /usr/sbin/dropbear 2>/dev/null; then
+    cp -a /usr/sbin/dropbear "/usr/sbin/dropbear.apt-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+  fi
+  cat > /usr/sbin/dropbear <<WRAP
+#!/bin/sh
+# mytunnel wrapper - selalu jalankan Dropbear $ver
+exec /usr/local/sbin/dropbear-$tag "\$@"
+WRAP
+  chmod 755 /usr/sbin/dropbear
+
+  rm -rf "$tmp" 2>/dev/null
+  : > "$LOG" 2>/dev/null || true
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] dropbear -> $ver built from source (cflags=${db_cflags:-default})" >> "$LOG" 2>/dev/null || true
+  return 0
+}
+
 main() {
   local cur
-  cur=$(dropbear -V 2>&1 | head -1 | cut -c1-40 2>/dev/null || echo "-")
+  cur=$(/usr/sbin/dropbear -V 2>&1 | head -1 || echo "-")
   if [ "${1:-}" = "list" ]; then
     echo -e " Versi sekarang: ${CYAN}$cur${RESET}"
-    [ -f "$VER_FILE" ] && { echo -e "${DIM}Daftar versi:${RESET}"; cat "$VER_FILE" 2>/dev/null | sed 's/^/  /'; } || echo -e "${DIM}(file versi kosong: $VER_FILE)${RESET}"
+    [ -f "$VER_FILE" ] && { echo -e "${DIM}Daftar versi:${RESET}"; grep -v '^$' "$VER_FILE" 2>/dev/null | sed 's/^/  /'; } || echo -e "${DIM}(file versi kosong: $VER_FILE)${RESET}"
     return
   fi
+
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
   printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Change Dropbear Version"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo -e " Versi sekarang: ${CYAN}$cur${RESET}"
-  if [ -f "$VER_FILE" ]; then echo -e "${DIM}Daftar versi:${RESET}"; cat "$VER_FILE" 2>/dev/null | sed 's/^/  /'; else echo -e "${DIM}File versi tidak ada: $VER_FILE${RESET}"; fi
-  echo -e "${DIM}Pilih versi atau kosongkan batal${RESET}"
+  if [ -f "$VER_FILE" ]; then
+    echo -e "${DIM}Daftar versi (build from source):${RESET}"
+    grep -v '^$' "$VER_FILE" 2>/dev/null | sed 's/^/  /'
+  else
+    echo -e "${DIM}File versi tidak ada: $VER_FILE${RESET}"
+  fi
+  echo -e "${DIM}Kosongkan untuk batal. Port layanan tetap (90).${RESET}"
   read -rp " Versi baru: " ver 2>/dev/null || return
   ver=$(echo "$ver" | tr -d ' \n')
   [ -z "$ver" ] && { echo "Batal"; pause; return; }
-  if [ -f "$VER_FILE" ] && ! grep -qx "$ver" "$VER_FILE" 2>/dev/null; then
-    echo -e "${YELLOW}Versi tidak ada di daftar, tetap lanjut?${RESET}"
-    if ! fh_need_confirm " Lanjut install $ver?"; then echo "Batal"; pause; return; fi
+  if [[ ! "$ver" =~ ^[0-9]{4}\.[0-9]{2}$ ]]; then
+    echo -e "${RED}Format versi: YYYY.NN (contoh 2019.78)${RESET}"; pause; return
   fi
-  if ! fh_need_confirm " Install Dropbear $ver?"; then echo "Batal"; pause; return; fi
+  if [ "$cur" = "Dropbear v$ver" ] || echo "$cur" | grep -q "v$ver"; then
+    echo -e "${YELLOW}Versi $ver sudah aktif${RESET}"; pause; return
+  fi
+  if [ -f "$VER_FILE" ] && ! grep -qx "$ver" "$VER_FILE" 2>/dev/null; then
+    echo -e "${YELLOW}Versi $ver tidak ada di daftar (akan dicoba unduh dari situs resmi).${RESET}"
+  fi
+  if ! fh_need_confirm " Install Dropbear $ver dari source?"; then echo "Batal"; pause; return; fi
+
   echo -e "${DIM}Install Dropbear $ver...${RESET}"
   if [ -n "$BASE" ]; then
     echo "[TEST MODE] simulasi install dropbear $ver" | tee -a "$LOG" 2>/dev/null
     echo "$ver" > "${BASE}/var/log/dropbear-version.sim" 2>/dev/null || true
-    echo -e "${GREEN}Simulasi selesai${RESET}"
-    fh_log "dropbear version -> $ver (test)"
+    echo -e "${GREEN}Simulasi selesai${RESET}"; fh_log "dropbear version -> $ver (test)"; pause; return
+  fi
+
+  # dependensi build
+  for pkg in build-essential zlib1g-dev bzip2; do
+    dpkg -s "$pkg" >/dev/null 2>&1 || apt-get install -y "$pkg" >/dev/null 2>&1 || true
+  done
+
+  if ! _build_dropbear "$ver"; then
+    echo -e "${RED}Gagal memasang Dropbear $ver. Versi lama tetap aktif.${RESET}"
     pause; return
   fi
-  # Real install: try apt version or source
-  apt-get update -y >/dev/null 2>&1 || true
-  # Try apt install specific version if available; fallback to latest
-  if apt-cache policy dropbear 2>/dev/null | grep -q "$ver"; then
-    apt-get install -y "dropbear=$ver" 2>&1 | tail -n 20
-  else
-    apt-get install -y dropbear 2>&1 | tail -n 20
-  fi
-  local new_ver
-  new_ver=$(dropbear -V 2>&1 | head -1 | cut -c1-40)
-  echo -e " Versi sekarang: ${GREEN}$new_ver${RESET}"
+
   systemctl restart dropbear 2>/dev/null || service dropbear restart 2>/dev/null || true
+  sleep 2
+  local new_ver
+  new_ver=$(/usr/sbin/dropbear -V 2>&1 | head -1)
+  if echo "$new_ver" | grep -q "v$ver"; then
+    echo -e " ${GREEN}✓ Versi aktif: $new_ver${RESET}"
+  else
+    echo -e " ${YELLOW}⚠ Terpasang, tapi service melapor: $new_ver${RESET}"
+    echo -e "${DIM}  Cek: systemctl status dropbear || journalctl -u dropbear -n 20${RESET}"
+  fi
+  echo -e "${DIM} Port 90 tetap; banner & akun tidak berubah.${RESET}"
   fh_log "dropbear version -> $ver ($new_ver)"
   pause
 }
@@ -15188,10 +15309,11 @@ __EMBED_EOF__
 fi
 chmod 644 "$ETC/config/brand.txt" 2>/dev/null || true
 cat > "$ETC/config/dropbear_versions.txt" << '__EMBED_EOF__'
+2019.78
 2020.81
 2022.83
 2023.88
-
+2024.86
 __EMBED_EOF__
 chmod 644 "$ETC/config/dropbear_versions.txt"
 # Versi TIDAK boleh di-hardcode: dulu tertulis "v1.10.5" sehingga setiap instalasi

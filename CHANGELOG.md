@@ -1,3 +1,42 @@
+## v1.13.13 — 2026-11-19 — Menu 5: ganti versi Dropbear benar-benar build dari source
+
+### Bug: menu 5 tidak pernah memasang versi yang dipilih
+Kode lama hanya menjalankan `apt-get install dropbear` (tanpa versi), sehingga
+memilih 2020.81/2022.83/2023.88 tetap memasang paket repo Debian (2019.x) atau
+tidak berubah sama sekali. Tidak ada proses unduh/build/verifikasi. Selain itu
+`2019.78` tidak ada di `dropbear_versions.txt` walau justru versi itulah yang aktif.
+
+### Perbaikan
+- Unduh `dropbear-<ver>.tar.bz2` dari mirror resmi berurutan:
+  `matt.ucc.asn.au/dropbear/releases` lalu `dropbear.nl/mirror/releases`
+  (curl dulu, wget cadangan, `--timeout=30`).
+- Verifikasi SHA256 untuk rilis yang checksum-nya terdaftar (2019.78 =
+  `525965971272270995364a0eb01f35180d793182e63dd0b0c3eb0292291644a4`).
+  Versi tanpa entri dilewati dengan keterangan eksplisit, bukan diam-diam.
+- Build: `CFLAGS="-O2 -fcommon -Wno-error -Wno-unused-result"` — `-fcommon` wajib
+  untuk GCC 10+ (gcc 12 di VPS), tanpa itu link gagal.
+- Binary per versi dipertahankan (`/usr/local/sbin/dropbear-2019`, `-2020`, ...)
+  sehingga bisa bolak-balik; wrapper `/usr/sbin/dropbear` menunjuk versi aktif
+  (jalur init.d/systemd Debian). Binary apt lama dibackup `dropbear.apt-<ts>`.
+- Dependensi build (`build-essential zlib1g-dev bzip2`) dipasang otomatis.
+- Validasi format versi `YYYY.NN`, deteksi "sudah aktif", dan verifikasi akhir:
+  service benar-benar melapor versi baru (bukan sekadar "selesai").
+
+### Daftar versi
+`2019.78, 2020.81, 2022.83, 2023.88, 2024.86`
+
+### Verifikasi live (VPS 43.128.104.92)
+```
+build 2020.81 : Checksum dilewati (tak terdaftar) -> Build gcc12 -fcommon -> OK
+                service active, banner SSH-2.0-dropbear_2020.81
+                wrapper: exec /usr/local/sbin/dropbear-2020
+kembali 2019.78: Checksum SHA256 cocok -> Build OK -> Dropbear v2019.78
+semua jalur klien setelah tukar versi:
+  WS  80/8080/2082/8880 -> SSH-2.0-dropbear_2019.78
+  TLS 443               -> SSH-2.0-dropbear_2019.78
+login nyata port 90   : banner tampil, auth sukses
+```
+
 ## v1.13.12 — 2026-11-19 — Audit fungsional 17 opsi menu Features: 4 bug diperbaiki
 
 Bukan sekadar "menu tampil", tapi tiap opsi diuji sampai efek nyata di sistem.
