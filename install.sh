@@ -4756,22 +4756,22 @@ while true; do
   echo -ne "${BOLD}Select [1-17 or x]: ${RESET}"
   read -r c || break
   case "$c" in
-    1) bash "$BASE/features/bandwidth.sh" 2>&1 || echo -e "${YELLOW}Fitur bandwidth belum tersedia${RESET}"; pause;;
-    2) bash "$BASE/features/reboot.sh" 2>&1 || echo -e "${YELLOW}Fitur reboot belum tersedia${RESET}"; pause;;
-    3) bash "$BASE/features/lock_time.sh" 2>&1 || echo -e "${YELLOW}Fitur lock_time belum tersedia${RESET}"; pause;;
-    4) bash "$BASE/features/speedtest.sh" 2>&1 || echo -e "${YELLOW}Fitur speedtest belum tersedia${RESET}"; pause;;
-    5) bash "$BASE/features/dropbear_version.sh" 2>&1 || echo -e "${YELLOW}Fitur dropbear_version belum tersedia${RESET}"; pause;;
-    6) bash "$BASE/features/services.sh" 2>&1 || echo -e "${YELLOW}Fitur services belum tersedia${RESET}"; pause;;
-    7) bash "$BASE/features/backup.sh" backup 2>&1 || echo -e "${YELLOW}Fitur backup belum tersedia${RESET}"; pause;;
-    8) bash "$BASE/features/backup.sh" restore 2>&1 || echo -e "${YELLOW}Fitur restore belum tersedia${RESET}"; pause;;
-    9) bash "$BASE/features/domain.sh" 2>&1 || echo -e "${YELLOW}Fitur domain belum tersedia${RESET}"; pause;;
-    10) bash "$BASE/features/banner.sh" 2>&1 || echo -e "${YELLOW}Fitur banner belum tersedia${RESET}"; pause;;
-    11) bash "$BASE/features/services.sh" menu 2>&1 || echo -e "${YELLOW}Fitur services belum tersedia${RESET}"; pause;;
-    12) bash "$BASE/features/security.sh" 2>&1 || echo -e "${YELLOW}Fitur security belum tersedia${RESET}"; pause;;
-    13) bash "$BASE/features/autoupdate.sh" 2>&1 || echo -e "${YELLOW}Fitur autoupdate belum tersedia${RESET}"; pause;;
-    14) bash "$BASE/features/sysinfo_page.sh" 2>&1 || echo -e "${YELLOW}Fitur sysinfo belum tersedia${RESET}"; pause;;
-    15) bash "$BASE/features/dropbear_version.sh" list 2>&1 || echo -e "${YELLOW}Fitur dropbear_version belum tersedia${RESET}"; pause;;
-    16) bash "$BASE/menu/advanced.sh" 2>&1 || echo -e "${YELLOW}Advanced belum tersedia${RESET}"; pause;;
+    1) bash "$BASE/features/bandwidth.sh" 2>&1 || { echo -e "${YELLOW}Fitur bandwidth belum tersedia${RESET}"; pause; };;
+    2) bash "$BASE/features/reboot.sh" 2>&1 || { echo -e "${YELLOW}Fitur reboot belum tersedia${RESET}"; pause; };;
+    3) bash "$BASE/features/lock_time.sh" 2>&1 || { echo -e "${YELLOW}Fitur lock_time belum tersedia${RESET}"; pause; };;
+    4) bash "$BASE/features/speedtest.sh" 2>&1 || { echo -e "${YELLOW}Fitur speedtest belum tersedia${RESET}"; pause; };;
+    5) bash "$BASE/features/dropbear_version.sh" 2>&1 || { echo -e "${YELLOW}Fitur dropbear_version belum tersedia${RESET}"; pause; };;
+    6) bash "$BASE/features/services.sh" 2>&1 || { echo -e "${YELLOW}Fitur services belum tersedia${RESET}"; pause; };;
+    7) bash "$BASE/features/backup.sh" backup 2>&1 || { echo -e "${YELLOW}Fitur backup belum tersedia${RESET}"; pause; };;
+    8) bash "$BASE/features/backup.sh" restore 2>&1 || { echo -e "${YELLOW}Fitur backup belum tersedia${RESET}"; pause; };;
+    9) bash "$BASE/features/domain.sh" 2>&1 || { echo -e "${YELLOW}Fitur domain belum tersedia${RESET}"; pause; };;
+    10) bash "$BASE/features/banner.sh" 2>&1 || { echo -e "${YELLOW}Fitur banner belum tersedia${RESET}"; pause; };;
+    11) bash "$BASE/features/services.sh" menu 2>&1 || { echo -e "${YELLOW}Fitur services belum tersedia${RESET}"; pause; };;
+    12) bash "$BASE/features/security.sh" 2>&1 || { echo -e "${YELLOW}Fitur security belum tersedia${RESET}"; pause; };;
+    13) bash "$BASE/features/autoupdate.sh" 2>&1 || { echo -e "${YELLOW}Fitur autoupdate belum tersedia${RESET}"; pause; };;
+    14) bash "$BASE/features/sysinfo_page.sh" 2>&1 || { echo -e "${YELLOW}Fitur sysinfo_page belum tersedia${RESET}"; pause; };;
+    15) bash "$BASE/features/dropbear_version.sh" list 2>&1 || { echo -e "${YELLOW}Fitur dropbear_version belum tersedia${RESET}"; pause; };;
+    16) bash "$BASE/menu/advanced.sh" 2>&1 || { echo -e "${YELLOW}Fitur advanced belum tersedia${RESET}"; pause; };;
     17|b|B) break;;
     x|X) exit 0;;
     *) echo -e "${RED}Pilihan tidak valid${RESET}"; sleep 1;;
@@ -5001,6 +5001,8 @@ while true; do
     *) echo -e "${RED}Pilihan tidak valid${RESET}"; sleep 1;;
   esac
 done
+# sub-menu advanced (warp/routing/slowdns/ssh_extra) pause sendiri, jadi di sini
+# tidak perlu pause lagi setelah tiap opsi. Saat keluar (5/x) langsung kembali.
 
 __EMBED_EOF__
 chmod 755 "$ETC/menu/advanced.sh"
@@ -13355,47 +13357,53 @@ cat > "$ETC/features/lock_time.sh" << '__EMBED_EOF__'
 # mytunnel features/lock_time.sh - SET REDUCE/TIME / Time Banned 
 # shellcheck disable=SC1091,SC1090
 MYTUNNEL_PREFIX="${MYTUNNEL_PREFIX:-}"
+
+pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 if [ -n "$MYTUNNEL_PREFIX" ]; then BASE="$MYTUNNEL_PREFIX/etc/mytunnel"; else BASE="/etc/mytunnel"; fi
 for f in "$BASE/lib/colors.sh" "$BASE/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
 RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
 CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; GREY="${GREY:-\033[0;37m}"; RESET="${RESET:-\033[0m}"; BOLD="${BOLD:-\033[1m}"
 CONF="$BASE/config/lock_time.conf"
 _get_cur() { local v=15; [ -f "$CONF" ] && . "$CONF" 2>/dev/null || true; v="${LOCK_MIN:-15}"; [[ "$v" =~ ^[0-9]+$ ]] || v=15; echo "$v"; }
-while true; do
-  cur=$(_get_cur)
-  clear 2>/dev/null || printf '\033c'
-  if declare -f draw_box >/dev/null 2>&1; then draw_box "SUNEK VPN" 60; else echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"; printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "SUNEK VPN"; echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"; fi
-  # Time Banned Active line - centered inside 60 box
-  _t="Time Banned Active : ${cur}m:0s"
-  _len=${#_t}; _inner=58; _left=$(( (_inner - _len)/2 )); _right=$(( _inner - _len - _left ))
-  printf "${BLUE}│${RESET}%*s${BOLD}%s${RESET}%*s${BLUE}│${RESET}\n" "$_left" "" "$_t" "$_right" ""
-  echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
-  echo -e "${BLUE}│${RESET} 1.) Set Time Banned                                ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 2.) Back to Menu                                   ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} x.) Exit                                           ${BLUE}│${RESET}"
-  echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
-  echo -ne "${BOLD}Select From Options [1-2 or x] : ${RESET}"
-  read -r c || break
-  case "$c" in
-    1)
-      echo ""
-      echo -ne "${CYAN}Set lock time (1-1440 menit, kosongkan batal) [${cur}]: ${RESET}"
-      read -r inp || continue
-      [ -z "$inp" ] && continue
-      inp=$(echo "$inp" | tr -d ' ')
-      if ! [[ "$inp" =~ ^[0-9]+$ ]] || [ "$inp" -lt 1 ] || [ "$inp" -gt 1440 ]; then echo -e "${RED}Harus angka 1-1440${RESET}"; sleep 1; continue; fi
-      mkdir -p "$(dirname "$CONF")" 2>/dev/null || true
-      if [ -f "$CONF" ]; then grep -v '^LOCK_MIN=' "$CONF" 2>/dev/null > "$CONF.tmp" || true; echo "LOCK_MIN=$inp" >> "$CONF.tmp"; cat "$CONF.tmp" > "$CONF" 2>/dev/null; rm -f "$CONF.tmp" 2>/dev/null || true; else echo "LOCK_MIN=$inp" > "$CONF" 2>/dev/null; fi
-      chmod 644 "$CONF" 2>/dev/null || true
-      echo -e "${GREEN}✓ Time Banned diubah: ${cur}m -> ${inp}m${RESET}"
-      echo "[$(date '+%Y-%m-%d %H:%M:%S')] set lock_time ${cur} -> ${inp}" >> "${MYTUNNEL_PREFIX:-}/var/log/mytunnel.log" 2>/dev/null || true
-      sleep 1
-      ;;
-    2|b|B) break ;;
-    x|X) exit 0 ;;
-    *) echo -e "${YELLOW}Pilihan tidak valid${RESET}"; sleep 1 ;;
-  esac
-done
+lock_time_menu() {
+  while true; do
+    cur=$(_get_cur)
+    clear 2>/dev/null || printf '\033c'
+    if declare -f draw_box >/dev/null 2>&1; then draw_box "SUNEK VPN" 60; else echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"; printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "SUNEK VPN"; echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"; fi
+    # Time Banned Active line - centered inside 60 box
+    _t="Time Banned Active : ${cur}m:0s"
+    _len=${#_t}; _inner=58; _left=$(( (_inner - _len)/2 )); _right=$(( _inner - _len - _left ))
+    printf "${BLUE}│${RESET}%*s${BOLD}%s${RESET}%*s${BLUE}│${RESET}\n" "$_left" "" "$_t" "$_right" ""
+    echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
+    echo -e "${BLUE}│${RESET} 1.) Set Time Banned                                ${BLUE}│${RESET}"
+    echo -e "${BLUE}│${RESET} 2.) Back to Menu                                   ${BLUE}│${RESET}"
+    echo -e "${BLUE}│${RESET} x.) Exit                                           ${BLUE}│${RESET}"
+    echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
+    echo -ne "${BOLD}Select From Options [1-2 or x] : ${RESET}"
+    read -r c || break
+    case "$c" in
+      1)
+        echo ""
+        echo -ne "${CYAN}Set lock time (1-1440 menit, kosongkan batal) [${cur}]: ${RESET}"
+        read -r inp || continue
+        [ -z "$inp" ] && continue
+        inp=$(echo "$inp" | tr -d ' ')
+        if ! [[ "$inp" =~ ^[0-9]+$ ]] || [ "$inp" -lt 1 ] || [ "$inp" -gt 1440 ]; then echo -e "${RED}Harus angka 1-1440${RESET}"; sleep 1; continue; fi
+        mkdir -p "$(dirname "$CONF")" 2>/dev/null || true
+        if [ -f "$CONF" ]; then grep -v '^LOCK_MIN=' "$CONF" 2>/dev/null > "$CONF.tmp" || true; echo "LOCK_MIN=$inp" >> "$CONF.tmp"; cat "$CONF.tmp" > "$CONF" 2>/dev/null; rm -f "$CONF.tmp" 2>/dev/null || true; else echo "LOCK_MIN=$inp" > "$CONF" 2>/dev/null; fi
+        chmod 644 "$CONF" 2>/dev/null || true
+        echo -e "${GREEN}✓ Time Banned diubah: ${cur}m -> ${inp}m${RESET}"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] set lock_time ${cur} -> ${inp}" >> "${MYTUNNEL_PREFIX:-}/var/log/mytunnel.log" 2>/dev/null || true
+        sleep 1
+        ;;
+      2|b|B) break ;;
+      x|X) exit 0 ;;
+      *) echo -e "${YELLOW}Pilihan tidak valid${RESET}"; sleep 1 ;;
+    esac
+  done
+}
+
+lock_time_menu
 
 __EMBED_EOF__
 chmod 755 "$ETC/features/lock_time.sh"
@@ -13525,7 +13533,7 @@ main() {
     echo -e "${BLUE}│${RESET} 2.) Reboot sekarang                              ${BLUE}│${RESET}"
     echo -e "${BLUE}│${RESET} 3.) Kembali                                      ${BLUE}│${RESET}"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
-    read -rp " Pilih [1-4]: " c 2>/dev/null || c=4
+    read -rp " Pilih [1-3]: " c 2>/dev/null || c=3
     case "$c" in 1) set_schedule ;; 2) do_reboot_now ;; 3) break ;; *) echo -e "${RED}Tidak valid${RESET}"; sleep 1 ;; esac
   done
 }
@@ -13970,7 +13978,7 @@ main() {
     echo -e "${BLUE}│${RESET} 2.) Restore dari backup                          ${BLUE}│${RESET}"
     echo -e "${BLUE}│${RESET} 3.) Kembali                                      ${BLUE}│${RESET}"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
-    read -rp " Pilih [1-4]: " c 2>/dev/null || c=4
+    read -rp " Pilih [1-3]: " c 2>/dev/null || c=3
     case "$c" in 1) do_backup ;; 2) do_restore ;; 3) break ;; *) echo -e "${RED}Tidak valid${RESET}"; sleep 1;; esac
   done
 }
@@ -14851,7 +14859,7 @@ main() {
     echo -e "${BLUE}│${RESET} 2.) Atur URL repo                                 ${BLUE}│${RESET}"
     echo -e "${BLUE}│${RESET} 3.) Kembali                                       ${BLUE}│${RESET}"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
-    read -rp " Pilih [1-4]: " c 2>/dev/null || c=4
+    read -rp " Pilih [1-3]: " c 2>/dev/null || c=3
     case "$c" in 1) check_update ;; 2) set_repo ;; 3) break ;; *) echo -e "${RED}Tidak valid${RESET}"; sleep 1;; esac
   done
 }
@@ -15103,6 +15111,9 @@ main() {
     else
       echo -e "${DIM}(file versi kosong: $VER_FILE)${RESET}"
     fi
+    # dipanggil sebagai "list" dari menu Features (opsi 15) - beri pause di sini
+    # karena pemanggilnya tidak lagi pause (hindari Enter 2x).
+    pause
     return
   fi
 

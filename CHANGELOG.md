@@ -1,3 +1,36 @@
+## v1.13.16 — 2026-11-19 — Fix "back to menu harus Enter 2x"
+
+### Akar masalah
+Setiap sub-menu punya `pause` di **setelah loop** (`done` lalu `pause`). `break`
+pada opsi "Kembali" keluar dari `while` lalu tetap menabrak `pause` itu, jadi
+user harus tekan Enter sekali untuk keluar sub-menu — lalu induk (`menu/features.sh`)
+masih punya `pause` di arm `case`-nya, sehingga total **dua kali Enter**.
+
+### Perbaikan
+1. `menu/features.sh` — hapus `pause` dari semua 16 arm `case`. Penanggung jawab
+   pause sekarang sub-menu, bukan pemanggil.
+2. Sub-menu loop (`security.sh`, `autoupdate.sh`, `backup.sh`, `reboot.sh`,
+   `lock_time.sh`, `services.sh`, `banner.sh`, `menu/advanced.sh`) — hapus `pause`
+   setelah `done`. "Kembali" kini langsung keluar tanpa Enter.
+3. `pause` yang tadinya di top-level file (jalan saat dieksekusi, bukan di dalam
+   fungsi) dipindah ke dalam fungsi terkait agar hanya jalan saat memang perlu.
+4. `dropbear_version.sh` opsi `list` (dipanggil menu Features opsi 15) kini
+   memberi `pause` sendiri karena pemanggilnya tidak lagi pause.
+5. `advanced.sh` — sub-menu-nya pause sendiri; `pause` ganda di induk dihapus.
+6. Bonus temuan: `reboot.sh`, `backup.sh`, `autoupdate.sh` **hang** saat stdin EOF
+   karena `|| c=4` padahal menu hanya 1-3 (opsi 4 tidak ada) → loop "Tidak valid"
+   tanpa akhir. Diperbaiki `|| c=3` + label `[1-3]`.
+
+### Verifikasi live
+```
+EOF (</dev/null): reboot/backup/autoupdate rc=0 (sebelumnya HANG)
+"kembali" + satu baris kosong: baris kosong sampai ke menu (Tidak-valid=0)
+  reboot, services, security, autoupdate, advanced, lock_time, bandwidth: BENAR
+rantai main.sh -> features.sh -> 17 -> 17: Tidak-valid=0, Tekan-Enter=0
+```
+Pause tetap ada setelah aksi yang menampilkan data (bandwidth info, backup list,
+services restart, sysinfo) — itu memang perlu, bukan yang dikeluhkan.
+
 ## v1.13.15 — 2026-11-19 — Menu 5: 5 versi Dropbear (2016-2020) sesuai spesifikasi
 
 Daftar versi sekarang: **2016.74, 2017.75, 2018.76, 2019.78, 2020.81** (nomor 1-5).
