@@ -1,3 +1,34 @@
+## v1.13.4 — 2026-11-18 — Audit menyeluruh: fix doctor.sh salah nama unit SlowDNS
+
+Audit penuh 74 blok heredoc di `install.sh` + verifikasi fungsional live di VPS.
+
+### Diperbaiki
+- `menu/doctor.sh` memeriksa unit `slowdns` (tidak ada) sehingga SlowDNS selalu
+  dilaporkan **OFF** padahal `mytunnel-slowdns` aktif. Nama unit dikoreksi.
+- Deploy `setup/zivpn.sh` (blok `ufw allow 5667/udp` + `6000:19999/udp`) ke VPS —
+  sebelumnya tertinggal di repo saja.
+
+### Hasil audit (semua lulus)
+- Syntax: `bash -n install.sh` OK; **74/74 blok ter-embed** valid
+  (4 "FAIL" awal = false positive: `.py`, logrotate, banner, markdown — diverifikasi
+  dengan parser masing-masing).
+- `shellcheck -S error`: 0 error (hanya `VERSION` kena SC2148, bukan skrip).
+- Repo vs VPS: **73/74 file identik** (sisa `config/brand.txt` = data runtime, wajar).
+- Helper kritikal ter-load: `ssh_create`, `ssh_delete`, `print_ssh_account_info`,
+  `ssh_account_block`, `ah_notify_admin_mono`, `_zivpn_add`, `_zivpn_del`,
+  `proto_create`, `print_proto_account_info`, `validate_ssh_username` — semua OK.
+- End-to-end: create SSH -> user sistem ada + DB + masuk ZiVPN; delete -> user hilang
+  + ZiVPN tercabut + minimal `["zivpn"]` dijaga. VMess create -> 5 link, delete OK.
+- `xray run -test` -> Configuration OK. Dropbear v2019.78. Xray 26.11.9.
+- TLS 443/4443/8443 -> Let's Encrypt, expiry 2027-02-16.
+- Bot @Muesea_bot: getMe OK, service active, notif mono terkirim.
+- Cron `autoexpire`/`quota`/`limitip` -> exit 0.
+
+### Catatan (bukan bug)
+5 unit (`squid`, `mytunnel-udpgw`, `mytunnel-ohp-ssh`, `mytunnel-udp-custom`,
+`mytunnel-openvpn-tcp`) **tidak dipasang installer** — hanya lewat menu advanced
+secara manual. Unit file tidak ada, bukan service rusak.
+
 ## v1.13.3 — 2026-11-18 — Fix syntax error advanced_helpers.sh: notif tak pernah terkirim
 
 **Akar masalah sebenarnya.** `lib/advanced_helpers.sh` punya baris nyasar `done)`

@@ -15840,7 +15840,7 @@ main() {
   for p in vmess vless trojan; do check_proto "$p"; echo ""; done
   # also quick service check
   echo -e "${CYAN}[Service]${RESET}"
-  for s in xray nginx dropbear mytunnel-sshws squid mytunnel-udpgw mytunnel-ohp-ssh mytunnel-openvpn-tcp slowdns mytunnel-udp-custom mytunnel-bot; do
+  for s in xray nginx dropbear mytunnel-sshws squid mytunnel-udpgw mytunnel-ohp-ssh mytunnel-openvpn-tcp mytunnel-slowdns mytunnel-udp-custom mytunnel-bot; do
     if [ -n "$BASE" ]; then
       [ -f "$BASE/etc/systemd/system/${s}.service.sim" ] && echo -e "  $s: ${GREEN}sim ON${RESET}" || echo -e "  $s: ${DIM}sim OFF${RESET}"
     else
