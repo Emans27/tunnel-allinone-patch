@@ -7813,8 +7813,8 @@ BIN_DST(){
 }
 
 # Official sources (HTTPS only)
-OHP_URL_AMD64="https://github.com/lfasmpao/open-http-puncher/releases/download/0.1/ohp-linux-amd64"
-OHP_URL_ALT="https://github.com/joawardjan/ohp/releases/download/v1.0/ohp-linux64"
+OHP_URL_AMD64="https://github.com/darkrenz/open-http-puncher/releases/download/0.1/ohpserver-linux32.zip"
+OHP_URL_ALT="https://github.com/Erwingwapo999/Open-http-puncher/releases/download/1.0/ohpserver-linux32.zip"
 # Optional expected sha256 (kosongkan jika upstream tidak publish; tetap tampilkan got hash)
 OHP_SHA256=""
 
@@ -7883,6 +7883,16 @@ STUB
         rm -f "$tmp" 2>/dev/null || true
         die "checksum mismatch" "exp $OHP_SHA256 got $got"
       fi
+      # upstream hanya merilis ZIP (statik 32-bit, jalan di x86_64) -> ekstrak bila zip
+      if head -c 2 "$tmp" 2>/dev/null | grep -q "PK"; then
+        command -v unzip >/dev/null 2>&1 || apt-get install -y unzip >/dev/null 2>&1 || true
+        local _dz; _dz=$(mktemp -d)
+        unzip -o -q "$tmp" -d "$_dz" >/dev/null 2>&1 || die "unzip ohp gagal" "Cek unzip"
+        local _exe; _exe=$(find "$_dz" -type f \( -name "ohpserver*" -o -name "ohp" \) 2>/dev/null | head -1)
+        [ -z "$_exe" ] && _exe=$(find "$_dz" -type f 2>/dev/null | head -1)
+        [ -n "$_exe" ] && cp -a "$_exe" "$tmp.bin" 2>/dev/null && mv -f "$tmp.bin" "$tmp"
+        rm -rf "$_dz" 2>/dev/null || true
+      fi
       # basic file check (should be ELF)
       if command -v file >/dev/null 2>&1; then file "$tmp" 2>&1 | head -1 || true; fi
       # install
@@ -7936,7 +7946,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=$bin -a $ssh_target -b 0.0.0.0:$ssh_port
+ExecStart=$bin -port $ssh_port -proxy $ssh_target -tunnel 127.0.0.1:2222
 Restart=always
 RestartSec=3
 
@@ -7950,7 +7960,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=$bin -a $ovpn_target -b 0.0.0.0:$ovpn_port
+ExecStart=$bin -port $ovpn_port -proxy $ovpn_target -tunnel 127.0.0.1:2223
 Restart=always
 RestartSec=3
 

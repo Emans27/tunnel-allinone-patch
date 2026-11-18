@@ -1,3 +1,31 @@
+## v1.13.5 — 2026-11-18 — Fix OHP: sumber 404 + flag ExecStart salah
+
+`setup/ohp.sh` gagal total di VPS: kedua URL rilis sudah **404** (repo
+`lfasmpao/open-http-puncher` & `joawardjan/ohp` hilang), dan kalaupun binary
+terpasang, unit systemd memakai flag `-a/-b` yang tidak dikenal binary
+(`flag provided but not defined: -a`) -> service restart loop.
+
+### Perbaikan
+- Sumber unduh diganti ke rilis yang masih ada dan sudah diverifikasi jalan:
+  `darkrenz/open-http-puncher` 0.1 + fallback `Erwingwapo999/Open-http-puncher`
+  (asset `ohpserver-linux32.zip`, binary asli `@lfasmpao` v0.1 beta,
+  **ELF 32-bit statically linked** — jalan di x86_64 tanpa libc32).
+- Tambah penanganan ZIP: deteksi magic `PK`, `unzip` ke temp, ambil `ohpserver`,
+  baru install ke `/usr/local/bin/ohp`.
+- **ExecStart dikoreksi** ke flag yang didukung binary:
+  `-port <port> -proxy <target> -tunnel 127.0.0.1:222x` (sebelumnya `-a/-b`).
+- Dua unit dipisah: `mytunnel-ohp-ssh` (9080 -> SSH 444) & `mytunnel-ohp-ovpn`
+  (9088 -> OVPN 1194), masing-masing tunnel port berbeda.
+
+### Verifikasi live (VPS 43.128.104.92)
+- `bash /etc/mytunnel/setup/ohp.sh install` -> sukses penuh (unduh+unzip+install+enable).
+- `mytunnel-ohp-ssh` & `mytunnel-ohp-ovpn` **active/enabled**, listen `:9080`/`:9088`,
+  koneksi TCP diterima (log `Added Connection`).
+- Lima layanan tambahan terpasang: squid (3128, proxy diuji -> IP keluar benar),
+  mytunnel-udpgw (7300), mytunnel-openvpn-tcp (1194/25000, zip :81),
+  udp-custom (36712), OHP (9080/9088). SSH 22 tetap terbuka.
+- **14/14 service aktif** di VPS.
+
 ## v1.13.4 — 2026-11-18 — Audit menyeluruh: fix doctor.sh salah nama unit SlowDNS
 
 Audit penuh 74 blok heredoc di `install.sh` + verifikasi fungsional live di VPS.
