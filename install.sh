@@ -10386,6 +10386,15 @@ lr_log(){
 lr_valid_interval(){ case "$1" in 5|10|15|30|60|180|360|720|1440) return 0 ;; *) return 1 ;; esac; }
 lr_valid_hhmm(){ [[ "$1" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; }
 
+# ── mono Telegram: escape HTML + bungkus <code> ─────────────
+# Semua nilai dinamis WAJIB lewat sini supaya &, <, > tidak merusak parse_mode.
+lr_esc(){
+  local s="${1:-}"
+  s=${s//&/&amp;}; s=${s//</&lt;}; s=${s//>/&gt;}
+  printf '%s' "$s"
+}
+lr_code(){ printf '<code>%s</code>' "$(lr_esc "${1:-}")"; }
+
 # ── mask token: tampilkan prefix, sisanya **** ──────────────
 lr_mask_token(){
   local t="${1:-}"
@@ -10489,20 +10498,17 @@ lr_ssh_rows(){
   ' | sort -k1,1
 }
 
+# Blok SSH. KOSONG bila tak ada user aktif -> pemanggil tidak mengirim protokol ini.
 lr_ssh_block(){
-  local rows out="" total=0
+  local rows u c body="" total=0
   rows=$(lr_ssh_rows)
-  out+=$'Users Login SSH/Dropbear\n'
-  if [ -z "$rows" ]; then
-    out+=$'(tidak ada user aktif)\n'
-  else
-    while read -r u c; do
-      out+="$(printf '%s %s PID' "$u" "$c")"$'\n'
-      total=$((total + c))
-    done <<< "$rows"
-  fi
-  out+=$(printf 'Total : %s\n' "$total")
-  printf '<pre>%s</pre>' "${out%$'\n'}"
+  [ -z "$rows" ] && return 0
+  while read -r u c; do
+    [ -z "$u" ] && continue
+    body+="$(lr_code "$u")"$'\n'
+    total=$((total + 1))
+  done <<< "$rows"
+  printf '%s\n\n%s\n%s' "$(lr_code "Users Login SSH/Dropbear")" "${body%$'\n'}" "$(lr_code "Total : $total")"
 }
 
 # ── Xray: user per protokol dari config.json (READ-ONLY) ────
@@ -10584,6 +10590,14 @@ lr_fmt_gb(){
   awk -v b="${1:-0}" 'BEGIN{ if(b<=0){print "-"; exit} printf "%.2f", b/1073741824 }'
 }
 # usage bulat integer gaya bot lama: 30GB
+# format ringkas untuk laporan: 0 -> "0GB", <1GB -> "512MB", sisanya "1.24GB"
+lr_fmt_gb_short(){
+  awk -v b="${1:-0}" 'BEGIN{
+    if (b+0 <= 0) { print "0GB"; exit }
+    if (b < 1073741824) { printf "%.0fMB\n", b/1048576; exit }
+    printf "%.2fGB\n", b/1073741824
+  }'
+}
 lr_fmt_gb_int(){
   awk -v b="${1:-0}" 'BEGIN{ if(b<=0){print "0"; exit} printf "%d", (b/1073741824)+0.5 }'
 }
@@ -10637,29 +10651,24 @@ lr_expired_list(){
   done < "$f" 2>/dev/null | sort -f
 }
 
+# Blok expired. KOSONG bila tak ada yang expired -> protokol tidak dikirim.
 lr_expired_block(){
-  local proto="$1"
-  local rows out="" total=0
+  local proto="$1" rows line body="" total=0
   rows=$(lr_expired_list "$proto")
-  out+=$'Account Expired '"$proto"$'\n'
-  if [ -z "$rows" ]; then
-    out+=$'(tidak ada user expired)\n'
-  else
-    while read -r line; do
-      [ -z "$line" ] && continue
-      out+="$line"$'\n'
-      total=$((total+1))
-    done <<< "$rows"
-  fi
-  out+=$(printf 'Total : %s\n' "$total")
-  printf '<pre>%s</pre>' "${out%$'\n'}"
+  [ -z "$rows" ] && return 0
+  while read -r line; do
+    [ -z "$line" ] && continue
+    body+="$(lr_code "$line")"$'\n'
+    total=$((total+1))
+  done <<< "$rows"
+  printf '%s\n\n%s\n%s' "$(lr_code "Account Expired $proto")" "${body%$'\n'}" "$(lr_code "Total : $total")"
 }
 
 # ── Xray: blok per protokol ─────────────────────────────────
 # keluarkan <pre> blok untuk satu protokol (VMESS|VLESS|TROJAN)
 lr_xray_block(){
   local proto="$1"
-  local total=0 body email tag idx active_ips line sorted out_html=""
+  local total=0 body email tag idx active_ips line sorted out_html="" used_b
   local logrows
   logrows=$(lr_xray_log_rows "$XRAY_LOG_MINUTES")
 
@@ -10699,35 +10708,26 @@ lr_xray_block(){
 
   # urut abjad
   sorted=$(printf '%s\n' "${!all[@]}" | sort -f)
-  body+=$'Users Login '"$proto"$'\n'
-  if [ -z "$sorted" ]; then
-    body+=$'(tidak ada user aktif)\n'
-  else
-    while read -r e; do
-      [ -z "$e" ] && continue
-      IFS='|' read -r tag idx <<< "${tagof[$e]:-?|-}"
-      # tampil: nama saja (buang "-vless/-trojan/-vmess" dan "@domain")
-      local disp usage cnt info base
-      disp=$(printf '%s' "$e" | cut -d@ -f1 | sed -E 's/-?(vmess|vless|trojan)$//')
-      # usage dari db mytunnel (sumber kebenaran yang dipakai script lama)
-      local used_b; used_b=$(lr_db_used_bytes "$proto" "$e")
-      usage="${used_b}GB"
-      [ "$used_b" = "0" ] && usage="0GB"
-      cnt=$(printf '%s' "$logrows" | awk -v P="$proto" -v E="$e" '$2==P && $3 ~ E' | wc -l)
-      [ "$cnt" -eq 0 ] && cnt=1
-      # IP unik
-      local ips; ips=$(printf '%s' "${uniqip[$e]:-}" | tr ' ' '\n' | grep -v '^$' | sort -u | wc -l)
-      [ "$ips" -eq 0 ] && ips=1
-      # kolom info opsional (port|id|quota) setelah "|"
-      base="${ips}IP | ${cnt}"
-      local extra; extra=$(lr_extra_info "$tag" "$e")
-      [ -n "$extra" ] && base="$base | $extra"
-      body+="$(printf '%s %s %s' "$disp" "$usage" "$base")"$'\n'
-      total=$((total+1))
-    done <<< "$sorted"
-  fi
-  body+=$(printf 'Total : %s\n' "$total")
-  printf '<pre>%s</pre>' "${body%$'\n'}"
+  # TIDAK ada user aktif pada protokol ini -> blok kosong, protokol tak dikirim
+  [ -z "$sorted" ] && return 0
+  while read -r e; do
+    [ -z "$e" ] && continue
+    IFS='|' read -r tag idx <<< "${tagof[$e]:-?|-}"
+    # tampil: nama saja (buang "-vless/-trojan/-vmess" dan "@domain")
+    local disp name usage ips cnt
+    disp=$(printf '%s' "$e" | cut -d@ -f1 | sed -E 's/-?(vmess|vless|trojan)$//')
+    name="$disp"
+    # kolom 6 db = BYTE mentah, bukan GB -> konversi (0 tetap "0GB")
+    used_b=$(lr_db_used_bytes "$proto" "$e")
+    usage="$(lr_fmt_gb_short "$used_b")"
+    # IP unik
+    ips=$(printf '%s' "${uniqip[$e]:-}" | tr ' ' '\n' | grep -v '^$' | sort -u | wc -l)
+    [ "$ips" -eq 0 ] && ips=1
+    # satu baris mono rapi: <code>nama | 12GB | 2 IP</code>
+    body+="$(lr_code "$(printf '%s | %s | %s IP' "$name" "$usage" "$ips")")"$'\n'
+    total=$((total+1))
+  done <<< "$sorted"
+  printf '%s\n\n%s\n%s' "$(lr_code "Users Login $proto")" "${body%$'\n'}" "$(lr_code "Total : $total")"
 }
 
 # kolom info opsional: port | id | quota
@@ -10816,12 +10816,12 @@ lr_send_report(){
     while IFS= read -r chunk; do
       [ -z "$chunk" ] && continue
       if [ $(( ${#cur} + ${#chunk} + 1 )) -gt 3800 ]; then
-        parts+=("$cur"); cur="$chunk"
+        parts+=("$cur"); cur="$chunk"$'\n'
       else
-        cur+="$chunk"
+        cur+="$chunk"$'\n'
       fi
     done < <(lr_split_pre "$m")
-    [ -n "$cur" ] && parts+=("$cur")
+    cur="${cur%$'\n'}"; [ -n "$cur" ] && parts+=("$cur")
   done
 
   local n=0 failed=0 sent=0 w
@@ -10840,14 +10840,8 @@ lr_send_report(){
   return 0
 }
 
-# split html jadi potongan utuh per <pre>
-lr_split_pre(){
-  awk '
-    /^<\/pre>$/ { buf=buf $0 ORS; print buf; buf=""; next }
-    { buf=buf $0 ORS }
-    END{ if(buf!="") print buf }
-  '
-}
+# pecah html jadi potongan per baris utuh (tidak memotong di tengah <code>)
+lr_split_pre(){ awk 'NF{ print }'; }
 
 # ── susun laporan ─────────────────────────────────────────
 # Output: satu PESAN per protokol (SSH|VMESS|VLESS|TROJAN), setiap pesan = header + 1 blok.
@@ -10857,7 +10851,7 @@ lr_split_pre(){
 lr_build_messages(){
   local ip dom isp header="" first=1 spec block out
   ip=$(lr_public_ip); dom=$(lr_domain); isp=$(lr_isp "$ip")
-  header=$(printf '<pre>IP     : %s\nDOMAIN : %s\nISP    : %s\n</pre>' "$ip" "$dom" "$isp")
+  header=$(printf '%s\n%s\n%s' "$(lr_code "IP     : $ip")" "$(lr_code "DOMAIN : $dom")" "$(lr_code "ISP    : $isp")")
 
   # $1 = nama array output
   local __out="${1:-LR_MSGS}"
@@ -10906,7 +10900,7 @@ lr_build_html(){
 lr_build_expired_messages(){
   local ip dom isp header="" first=1 spec block out
   ip=$(lr_public_ip); dom=$(lr_domain); isp=$(lr_isp "$ip")
-  header=$(printf '<pre>IP     : %s\nDOMAIN : %s\nISP    : %s\n</pre>' "$ip" "$dom" "$isp")
+  header=$(printf '%s\n%s\n%s' "$(lr_code "IP     : $ip")" "$(lr_code "DOMAIN : $dom")" "$(lr_code "ISP    : $isp")")
 
   local __out="${1:-LR_MSGS}"
   eval "$__out=()"
@@ -10943,12 +10937,12 @@ lr_send_expired_report(){
     while IFS= read -r chunk; do
       [ -z "$chunk" ] && continue
       if [ $(( ${#cur} + ${#chunk} + 1 )) -gt 3800 ]; then
-        parts+=("$cur"); cur="$chunk"
+        parts+=("$cur"); cur="$chunk"$'\n'
       else
-        cur+="$chunk"
+        cur+="$chunk"$'\n'
       fi
     done < <(lr_split_pre "$m")
-    [ -n "$cur" ] && parts+=("$cur")
+    cur="${cur%$'\n'}"; [ -n "$cur" ] && parts+=("$cur")
   done
 
   local n=0 failed=0 sent=0 w

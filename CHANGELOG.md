@@ -1,3 +1,53 @@
+## v1.13.17 — 2026-11-19 — LOGIN REPORT: hanya protokol aktif + teks mono
+
+### Sebelum
+Setiap laporan mengirim **4 pesan** (SSH, VMESS, VLESS, TROJAN) walau hanya satu
+protokol yang sedang dipakai user, tiap protokol kosong tampil `(tidak ada user aktif)`.
+Setiap blok dibungkus satu `<pre>...</pre>` besar (kotak copy raksasa).
+
+### Sesudah
+**1) Hanya protokol yang sedang aktif yang dikirim.**
+Blok protokol kini mengembalikan string kosong bila tidak ada user login. `lr_build_messages`
+meng-skip blok kosong, jadi user yang hanya login VMESS menerima **1 pesan**, bukan 4.
+- `lr_xray_block` — `return 0` (string kosong) bila tidak ada user tercatat pada window log
+- `lr_ssh_block` — `return 0` bila `lr_ssh_rows` kosong
+- `lr_expired_block` — `return 0` bila tidak ada yang expired
+
+**2) Semua baris mono dan rapi, tanpa `<pre>`.**
+Pola yang dipakai di seluruh notif (opsi A): tiap baris jadi satu `<code>...</code>`.
+```
+<code>IP     : 43.128.104.92</code>
+<code>DOMAIN : sg2.sunekvpn.cc.cd</code>
+<code>ISP    : ...</code>
+<code>Users Login VMESS</code>
+
+<code>jose | 0GB | 1 IP</code>
+<code>Total : 1</code>
+```
+Baris identitas dipisah satu baris kosong dari judul protokol, dan judul dipisah dari
+daftar user — jadi tidak menempel jadi satu kotak panjang.
+
+**3) Escaping aman HTML.**
+Helper baru `lr_esc` + `lr_code` di `lib/common.sh` meloloskan `&`, `<`, `>` sebelum
+dibungkus `<code>`, agar `parse_mode=HTML` tidak gagal bila nama akun memuat karakter itu.
+Semua nilai dinamis (nama, IP, domain, ISP, jumlah) lewat helper ini.
+
+**4) Fix tampilan pemakaian.**
+Kolom 6 db adalah **byte** (sumber: `proto_create` menulis `0` di kolom `used_bytes`), tetapi
+sebelumnya dilabeli `${used_b}GB` sehingga 0 ditulis `0GB` dan 500 jadi `500GB`. Kini lewat
+`lr_fmt_gb_short`: `0 → 0GB`, `< 1GB → 512MB`, `≥ 1GB → 1.24GB`.
+
+### Verifikasi live
+```
+user jose hanya VMESS: pesan final = 1 (sebelumnya 4)
+lr_send_report -> "laporan terkirim (1 pesan, chat 7637019563)"
+uji sisip log VLESS/TROJAN pada window: hanya protokol ber-user muncul
+lr_xray_block VLESS dengan db vless kosong -> string kosong (tak dikirim)
+splitter: dipatch per-baris (awk NF) agar tak memotong di tengah <code>
+```
+SSH collector (`lr_ssh_rows`: hitung sesi sshd parent `[priv]` vs anak, dropbear 1 proses
+= 1 sesi) tidak diubah — hanya formatnya yang jadi mono.
+
 ## v1.13.16 — 2026-11-19 — Fix "back to menu harus Enter 2x"
 
 ### Akar masalah
