@@ -1,3 +1,26 @@
+## v1.13.1 — 2026-11-18 — Fix email acme.sh ditolak Let's Encrypt
+
+Bug di `setup/cert.sh`: email acme.sh diambil dari `get_domain`, dan bila kosong
+di-fallback ke `example.com`. Let's Encrypt **menolak** domain reserved
+`example.com` (`urn:ietf:params:acme:error:invalidContact`), sehingga instalasi
+non-interaktif tanpa domain selalu gagal issue cert — nyatanya di VPS fresh
+43.128.104.92, issue LE gagal 2x sebelum domain di-set.
+
+### Perbaikan
+Urutan pemilihan email acme.sh kini:
+1. `MYTUNNEL_ACME_EMAIL` (env) — bila di-set.
+2. `admin@<domain>` (hasil `get_domain`) — bila domain sudah ada.
+3. `example.com` hanya sebagai fallback terakhir + **peringatan eksplisit** ke
+   log bahwa LE akan menolak dan cara mengatasinya.
+
+### Verifikasi live (VPS 43.128.104.92)
+- akar penyebab dikonfirmasi: `account.conf` lama berisi `admin@example.com`
+  -> daftar ulang acme.sh dengan email valid -> issue LE berhasil.
+- Setelah cert LE terpasang, semua jalur TLS menyajikan cert domain:
+  443 (nginx stream SNI-passthrough -> stunnel 4443), 4443, 8443, 8444, 9443.
+- TLS handshake dari luar ke `sg2.sunekvpn.cc.cd:443` -> `Verify return code: 0 (ok)`,
+  issuer Let's Encrypt. Layanan nginx/xray/zivpn/dropbear/sshws/stunnel aktif.
+
 ## v1.13.0 — 2026-11-18 — Integrasi ZiVPN UDP ke sistem akun SSH
 
 Tambah protokol **ZiVPN UDP** tanpa menu terpisah, terintegrasi langsung ke pembuatan

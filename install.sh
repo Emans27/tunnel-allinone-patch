@@ -5364,8 +5364,16 @@ ACME_STUB
   fi
   echo -e "${CYAN}Install acme.sh...${RESET}"
   local _acme_mail
-  _acme_mail=$(get_domain)
-  { [ -z "$_acme_mail" ] || [ "$_acme_mail" = "-" ]; } && _acme_mail="example.com"
+  # Email acme.sh: MYTUNNEL_ACME_EMAIL (env/--acme-mail) > admin@<domain> > admin@example.com
+  # Let's Encrypt MENOLAK domain reserved 'example.com' (invalidContact), jadi
+  # hanya pakai itu sebagai fallback terakhir.
+  _acme_mail="${MYTUNNEL_ACME_EMAIL:-}"
+  { [ -z "$_acme_mail" ] || [ "$_acme_mail" = "-" ]; } && _acme_mail=$(get_domain)
+  if { [ -z "$_acme_mail" ] || [ "$_acme_mail" = "-" ]; }; then
+    _acme_mail="example.com"
+    echo -e "${YELLOW}! Email acme.sh memakai default example.com - Let's Encrypt akan menolak.${RESET}"
+    echo -e "${YELLOW}  Set dulu: MYTUNNEL_ACME_EMAIL=you@example.com bash $ETC/setup/cert.sh${RESET}" >&2
+  fi
   if command -v curl >/dev/null 2>&1; then
     curl -s https://get.acme.sh 2>/dev/null | sh -s email=admin@"$_acme_mail" >/dev/null 2>&1 || true
   elif command -v wget >/dev/null 2>&1; then
@@ -9725,6 +9733,14 @@ if command -v iptables >/dev/null 2>&1; then
   iptables -C INPUT -p udp --dport 5667 -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport 5667 -j ACCEPT
   iptables -C INPUT -p udp --dport 6000:19999 -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport 6000:19999 -j ACCEPT
   command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save >/dev/null 2>&1 || true
+fi
+
+# 5b) ufw: buka UDP ZiVPN (bila ufw aktif) agar tidak bergantung manual
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+  echo -e "${CYAN}Buka UDP ZiVPN di ufw (5667 + 6000-19999)...${RESET}"
+  ufw allow 5667/udp   comment 'ZiVPN UDP'   >/dev/null 2>&1 || true
+  ufw allow 6000:19999/udp comment 'ZiVPN redirect' >/dev/null 2>&1 || true
+  _log "ufw: allow 5667/udp + 6000:19999/udp"
 fi
 
 sleep 1
