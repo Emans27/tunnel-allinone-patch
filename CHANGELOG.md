@@ -1,3 +1,44 @@
+## v1.13.9 — 2026-11-19 — fail2ban terpasang otomatis saat install
+
+Sebelumnya fail2ban hanya tersedia sebagai tombol manual di `features/security.sh`
+dan **tidak pernah terpasang** pada instalasi baru. Sekarang otomatis.
+
+### Perubahan
+- `fail2ban` masuk daftar dependensi tahap `[1/13]`.
+- `setup_fail2ban()` ditambahkan ke `setup/firewall.sh` dan dipanggil dari `main()`
+  (tahap `[6/13]`), jadi ikut jalan pada install non-interaktif `--yes`.
+- `features/security.sh` disamakan dengan installer (dua jail + filter yang sama),
+  supaya tombol manual tidak menghasilkan konfigurasi berbeda dari hasil install.
+
+### Dua jail, bukan satu
+`[mytunnel-sshd]` port **22,444** — OpenSSH admin, filter `sshd`, maxretry 5.
+`[mytunnel-dropbear]` port **90** — Dropbear pelanggan, filter `mytunnel-dropbear`
+(karangan sendiri), maxretry **8**, bantime 1800.
+
+Alasan filter terpisah: **filter `sshd` bawaan tidak mengenali format log Dropbear.**
+Diuji dengan `fail2ban-regex` pada log nyata:
+```
+filter sshd              -> 2 lines, 0 matched, 2 missed   (port 90 TANPA proteksi)
+filter mytunnel-dropbear -> 2 lines, 2 matched, 0 missed
+```
+Pola yang dikenali: `Bad password attempt for '<u>' from <HOST>:<port>` dan
+`Login attempt for nonexistent user from <HOST>:<port>`.
+
+maxretry 8 (bukan 5) karena pelanggan sah sering salah ketik; `127.0.0.0/8` dan
+`::1` di `ignoreip` agar pengujian lokal tidak mem-ban diri sendiri.
+
+### Verifikasi live (VPS 43.128.104.92)
+```
+apt install fail2ban          -> rc=0, Fail2Ban v1.0.2
+service                       -> active, enabled
+jail list                     -> mytunnel-dropbear, mytunnel-sshd, sshd
+fail2ban-regex (log dropbear) -> 2/2 matched
+uji ban IP dummy              -> iptables REJECT dibuat, unban bersih
+uji 8x bad password (log)     -> Currently banned 1, rule iptables 1
+fresh install (hapus jail+filter lalu jalankan ulang) -> keduanya dibuat, aktif
+doctor                        -> "fail2ban: ON"
+```
+
 ## v1.13.8 — 2026-11-19 — Audit menyeluruh fitur: 5 bug nyata diperbaiki
 
 Audit eksekusi nyata (bukan statis) seluruh menu/features/advanced/cron.

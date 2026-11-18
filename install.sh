@@ -247,9 +247,9 @@ if [[ "$NO_DEPS" = "0" && -z "$MYTUNNEL_PREFIX" ]]; then
   apt-get update -y >/dev/null 2>&1 || true
   # bzip2 WAJIB: tar -xjf dipakai extract Dropbear 2019.78. Tanpa bzip2,
   # extract gagal dan pesannya menyesatkan ("Extract Dropbear gagal").
-  apt-get install -y curl wget jq openssl vnstat bc cron socat dnsutils at python3 bzip2 >/dev/null 2>&1 || \
-  apt-get install -y curl wget jq openssl bc cron socat at python3 bzip2 >/dev/null 2>&1 || \
-  apt-get install -y curl wget jq openssl bc at python3 bzip2 >/dev/null 2>&1 || true
+  apt-get install -y curl wget jq openssl vnstat bc cron socat dnsutils at python3 bzip2 fail2ban >/dev/null 2>&1 || \
+  apt-get install -y curl wget jq openssl bc cron socat at python3 bzip2 fail2ban >/dev/null 2>&1 || \
+  apt-get install -y curl wget jq openssl bc at python3 bzip2 fail2ban >/dev/null 2>&1 || true
 fi
 echo -e "${CYAN}[2/13] Buat folder struktur...${RESET}"
 mkdir -p "$ETC/config" "$ETC/db" "$ETC/lib" "$ETC/menu" "$ETC/setup" "$ETC/cron" "$ETC/cert" "$ETC/features" "$ETC/bot" "$ETC/advanced" "$ETC/slowdns" "$ETC/logrotate.d" "$(dirname "$LOG")" "$BIN" "${BASE}/usr/local/etc/xray" "${BASE}/var/log/xray" "${BASE}/var/log/nginx" "${BASE}/etc/nginx/conf.d" "${BASE}/etc/sysctl.d" "${BASE}/var/lib/mytunnel/limit" "${BASE}/var/lib/mytunnel/state" "${BASE}/run" "${BASE}/etc/default" "${BASE}/etc/dropbear" "${BASE}/etc/logrotate.d" 2>/dev/null || true
@@ -5285,11 +5285,69 @@ setup_ufw() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] ufw enabled: $uniq" >> "$LOG" 2>/dev/null || true
 }
 
+# fail2ban: proteksi brute-force SSH ADMIN saja.
+# Port 90 (Dropbear pelanggan) SENGAJA tidak dimasukkan: pelanggan sering salah
+# password/berhenti di tengah auth, jail di port 90 akan mem-ban IP pelanggan sah.
+# Port admin: 22 (OpenSSH), 444 (OpenSSH alt).
+setup_fail2ban() {
+  command -v fail2ban-client >/dev/null 2>&1 || {
+    echo -e "${YELLOW}[fail2ban] tidak terpasang, dilewati${RESET}" | tee -a "$LOG" 2>/dev/null || true
+    return 0
+  }
+  local jail="/etc/fail2ban/jail.d/mytunnel-sshd.conf"
+  mkdir -p "$(dirname "$jail")" 2>/dev/null || true
+  cat > "$jail" <<'JAIL'
+# mytunnel - managed by installer, jangan edit manual
+[mytunnel-sshd]
+enabled  = true
+port     = 22,444
+filter   = sshd
+logpath  = /var/log/auth.log
+maxretry = 5
+findtime = 600
+bantime  = 3600
+ignoreip = 127.0.0.1/8 ::1
+
+# Dropbear port 90: filter sshd bawaan TIDAK mengenali format log dropbear
+# ("Bad password attempt for 'x' from ip" / "Login attempt for nonexistent user"),
+# sehingga port pelanggan tanpa proteksi. Jail terpisah dengan filter sendiri.
+# maxretry lebih longgar (8) karena pelanggan sah sering salah ketik.
+[mytunnel-dropbear]
+enabled  = true
+port     = 90
+filter   = mytunnel-dropbear
+logpath  = /var/log/auth.log
+maxretry = 8
+findtime = 600
+bantime  = 1800
+ignoreip = 127.0.0.1/8 ::1
+JAIL
+  chmod 644 "$jail" 2>/dev/null || true
+  local flt="/etc/fail2ban/filter.d/mytunnel-dropbear.conf"
+  cat > "$flt" <<'FLT'
+# mytunnel - filter Dropbear (format lognya beda dari OpenSSH)
+[Definition]
+failregex = ^.*dropbear\[\d+\]: Bad password attempt for .* from <HOST>:\d+$
+            ^.*dropbear\[\d+\]: Login attempt for nonexistent user from <HOST>:\d+$
+ignoreregex =
+FLT
+  chmod 644 "$flt" 2>/dev/null || true
+  systemctl enable fail2ban >/dev/null 2>&1 || true
+  systemctl restart fail2ban >/dev/null 2>&1 || service fail2ban restart >/dev/null 2>&1 || true
+  sleep 1
+  if systemctl is-active --quiet fail2ban; then
+    echo -e "${GREEN}[fail2ban] aktif, jail mytunnel-sshd (port 22,444)${RESET}" | tee -a "$LOG" 2>/dev/null || true
+  else
+    echo -e "${YELLOW}[fail2ban] gagal start, cek journalctl -u fail2ban${RESET}" | tee -a "$LOG" 2>/dev/null || true
+  fi
+}
+
 main() {
   echo -e "${CYAN}[firewall] Setup UFW + BBR + swap...${RESET}" | tee -a "$LOG" 2>/dev/null || true
   ensure_swap
   enable_bbr
   setup_ufw
+  setup_fail2ban
   echo -e "${GREEN}[firewall] Selesai${RESET}" | tee -a "$LOG" 2>/dev/null || true
 }
 main "$@"
@@ -14297,7 +14355,7 @@ setup_fail2ban() {
   cat > "$jail" 2>/dev/null <<'JAIL'
 [mytunnel-sshd]
 enabled = true
-port = 22,90,444
+port = 22,444
 filter = sshd
 logpath = /var/log/auth.log
             /var/log/secure
@@ -14305,8 +14363,30 @@ maxretry = 5
 findtime = 600
 bantime = 3600
 ignoreip = 127.0.0.1/8 ::1
+
+# Dropbear port 90: filter sshd tidak mengenali format log dropbear.
+[mytunnel-dropbear]
+enabled = true
+port = 90
+filter = mytunnel-dropbear
+logpath = /var/log/auth.log
+maxretry = 8
+findtime = 600
+bantime = 1800
+ignoreip = 127.0.0.1/8 ::1
 JAIL
   chmod 644 "$jail" 2>/dev/null || true
+  local flt
+  flt="${BASE}/etc/fail2ban/filter.d/mytunnel-dropbear.conf"
+  [ -z "$BASE" ] && flt="/etc/fail2ban/filter.d/mytunnel-dropbear.conf"
+  mkdir -p "$(dirname "$flt")" 2>/dev/null || true
+  cat > "$flt" 2>/dev/null <<'FLT'
+[Definition]
+failregex = ^.*dropbear\[\d+\]: Bad password attempt for .* from <HOST>:\d+$
+            ^.*dropbear\[\d+\]: Login attempt for nonexistent user from <HOST>:\d+$
+ignoreregex =
+FLT
+  chmod 644 "$flt" 2>/dev/null || true
   if [ -z "$BASE" ]; then
     systemctl enable fail2ban >/dev/null 2>&1 || true
     systemctl restart fail2ban 2>/dev/null || service fail2ban restart 2>/dev/null || true
@@ -15882,7 +15962,7 @@ main() {
   for p in vmess vless trojan; do check_proto "$p"; echo ""; done
   # also quick service check
   echo -e "${CYAN}[Service]${RESET}"
-  for s in xray nginx dropbear mytunnel-sshws squid mytunnel-udpgw mytunnel-ohp-ssh mytunnel-openvpn-tcp mytunnel-slowdns udp-custom mytunnel-bot; do
+  for s in xray nginx dropbear fail2ban mytunnel-sshws squid mytunnel-udpgw mytunnel-ohp-ssh mytunnel-openvpn-tcp mytunnel-slowdns udp-custom mytunnel-bot; do
     if [ -n "$BASE" ]; then
       [ -f "$BASE/etc/systemd/system/${s}.service.sim" ] && echo -e "  $s: ${GREEN}sim ON${RESET}" || echo -e "  $s: ${DIM}sim OFF${RESET}"
     else
