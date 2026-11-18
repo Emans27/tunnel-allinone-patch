@@ -1,3 +1,37 @@
+## v1.13.14 — 2026-11-19 — Checksum Dropbear resmi untuk semua versi, wajib
+
+### Temuan: 2023.88 tidak pernah dirilis
+`dropbear-2023.88.tar.bz2` -> HTTP 404 di mirror resmi dan **tidak ada** di
+`SHA256SUM.asc`. Versi itu tidak pernah keluar (Dropbear melompat 2022.83 -> 2024.84).
+Sudah dihapus dari daftar; pilihan itu dulu hanya menghasilkan unduh gagal.
+
+### Checksum resmi lengkap, bukan cuma 2019.78
+Sumber: `https://matt.ucc.asn.au/dropbear/releases/SHA256SUM.asc` (PGP-signed).
+12 versi terdaftar di `_sha256_of()`:
+`2019.77, 2019.78, 2020.79, 2020.80, 2020.81, 2022.82, 2022.83, 2024.84, 2024.85, 2024.86, 2025.87, 2025.89`
+
+### Checksum sekarang WAJIB
+Sebelumnya versi tanpa entri dilewati dengan keterangan. Sekarang **ditolak**:
+versi tanpa checksum resmi tidak dipasang sama sekali, dan checksum tidak cocok
+menghentikan proses sebelum extract/build.
+
+### Daftar versi menu
+`2019.78, 2020.81, 2022.83, 2024.86, 2025.89`
+
+### Verifikasi live (VPS 43.128.104.92) — tiap versi diuji nyata
+```
+2023.88 : unduh 404 -> ditolak, versi lama tetap aktif
+2020.81 : Checksum cocok -> build gcc12 -fcommon -> banner SSH-2.0-dropbear_2020.81
+2022.83 : Checksum cocok -> build OK -> banner ..._2022.83
+2024.86 : Checksum cocok -> build OK -> banner ..._2024.86
+2025.89 : Checksum cocok -> build OK -> banner ..._2025.89
+kembali 2019.78 : Checksum cocok -> build OK -> Dropbear v2019.78
+final: service active, banner SSH-2.0-dropbear_2019.78
+       wrapper exec /usr/local/sbin/dropbear-2019
+       binary tersimpan: dropbear-2019/2020/2022/2024/2025
+semua jalur klien: WS 80/8080/2082/8880 + TLS 443 = dropbear_2019.78
+```
+
 ## v1.13.13 — 2026-11-19 — Menu 5: ganti versi Dropbear benar-benar build dari source
 
 ### Bug: menu 5 tidak pernah memasang versi yang dipilih

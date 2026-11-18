@@ -14930,10 +14930,22 @@ BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
 
 pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 
-# checksum sha256 rilis resmi; kosong = tak diverifikasi (versi lama/bukan rilis resmi)
+# SHA256 resmi dari https://matt.ucc.asn.au/dropbear/releases/SHA256SUM.asc
+# (file itu PGP-signed oleh maintainer Dropbear). Kosong = versi tak terdaftar.
 _sha256_of() {
   case "$1" in
+    2019.77) echo "d91f78ebe633be1d071fd1b7e5535b9693794048b019e9f4bea257e1992b458d" ;;
     2019.78) echo "525965971272270995364a0eb01f35180d793182e63dd0b0c3eb0292291644a4" ;;
+    2020.79) echo "084f00546b1610a3422a0773e2c04cbe1a220d984209e033b548b49f379cc441" ;;
+    2020.80) echo "d927941b91f2da150b2033f1a88b6a47999bf0afb1493a73e9216cffdb5d7949" ;;
+    2020.81) echo "48235d10b37775dbda59341ac0c4b239b82ad6318c31568b985730c788aac53b" ;;
+    2022.82) echo "3a038d2bbc02bf28bbdd20c012091f741a3ec5cbe460691811d714876aad75d1" ;;
+    2022.83) echo "bc5a121ffbc94b5171ad5ebe01be42746d50aa797c9549a4639894a16749443b" ;;
+    2024.84) echo "16e22b66b333d6b7e504c43679d04ed6ca30f2838db40a21f935c850dfc01009" ;;
+    2024.85) echo "86b036c433a69d89ce51ebae335d65c47738ccf90d13e5eb0fea832e556da502" ;;
+    2024.86) echo "e78936dffc395f2e0db099321d6be659190966b99712b55c530dd0a1822e0a5e" ;;
+    2025.87) echo "738b7f358547f0c64c3e1a56bbc5ef98d34d9ec6adf9ccdf01dc0bf2caa2bc8d" ;;
+    2025.89) echo "0d1f7ca711cfc336dc8a85e672cab9cfd8223a02fe2da0a4a7aeb58c9e113634" ;;
     *) echo "" ;;
   esac
 }
@@ -14966,18 +14978,21 @@ _build_dropbear() {
     echo -e "${DIM}URL: https://matt.ucc.asn.au/dropbear/releases/dropbear-$ver.tar.bz2${RESET}"
     rm -rf "$tmp" 2>/dev/null; return 1
   fi
-  if [ -n "$want_sha" ]; then
-    got=$(sha256sum "$tmp/db.tar.bz2" 2>/dev/null | awk '{print $1}')
-    if [ "$got" != "$want_sha" ]; then
-      echo -e "${RED}Checksum SHA256 tidak cocok${RESET}"
-      echo -e "${DIM}  harap: $want_sha${RESET}"
-      echo -e "${DIM}  dapat: ${got:-?}${RESET}"
-      rm -rf "$tmp" 2>/dev/null; return 1
-    fi
-    echo -e "${GREEN}Checksum SHA256 cocok${RESET}"
-  else
-    echo -e "${DIM}Checksum untuk $ver tidak terdaftar, dilewati${RESET}"
+  if [ -z "$want_sha" ]; then
+    echo -e "${RED}Versi $ver tidak punya checksum resmi - DITOLAK${RESET}"
+    echo -e "${DIM}  Hanya versi yang terdaftar di SHA256SUM.asc resmi yang dipasang.${RESET}"
+    echo -e "${DIM}  Daftar valid: $(grep -v '^$' "$VER_FILE" 2>/dev/null | tr '\n' ' ')${RESET}"
+    rm -rf "$tmp" 2>/dev/null; return 1
   fi
+  got=$(sha256sum "$tmp/db.tar.bz2" 2>/dev/null | awk '{print $1}')
+  if [ "$got" != "$want_sha" ]; then
+    echo -e "${RED}Checksum SHA256 TIDAK COCOK - unduhan ditolak${RESET}"
+    echo -e "${DIM}  harap: $want_sha${RESET}"
+    echo -e "${DIM}  dapat: ${got:-?}${RESET}"
+    echo -e "${DIM}  Kemungkinan unduhan rusak/diubah. Coba lagi.${RESET}"
+    rm -rf "$tmp" 2>/dev/null; return 1
+  fi
+  echo -e "${GREEN}✓ Checksum SHA256 cocok (SHA256SUM.asc resmi)${RESET}"
 
   echo -e "${DIM}Extract...${RESET}"
   if ! tar -xjf "$tmp/db.tar.bz2" -C "$tmp" 2>/dev/null; then
@@ -15312,8 +15327,8 @@ cat > "$ETC/config/dropbear_versions.txt" << '__EMBED_EOF__'
 2019.78
 2020.81
 2022.83
-2023.88
 2024.86
+2025.89
 __EMBED_EOF__
 chmod 644 "$ETC/config/dropbear_versions.txt"
 # Versi TIDAK boleh di-hardcode: dulu tertulis "v1.10.5" sehingga setiap instalasi
