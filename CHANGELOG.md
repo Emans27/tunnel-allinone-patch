@@ -1,3 +1,31 @@
+## v1.13.7 — 2026-11-18 — Port 80 tak konek: httpmux jalan kode lama (belum restart)
+
+Setelah v1.13.6 (`SSH_PORT=22` -> `90`), port **80 tetap menampilkan OpenSSH**
+sementara 8080/2082/TLS sudah Dropbear. Penyebabnya bukan kode:
+
+- File `/usr/local/bin/mytunnel-httpmux.py` sudah `SSH_PORT=90`, tetapi **prosesnya
+  jalan sejak 11:50 sedangkan file diedit 18:50** — Python memuat kode lama ke memori,
+  jadi httpmux masih meneruskan ke port 22 (OpenSSH) selama ~7 jam.
+- `systemctl restart` pada `mytunnel-httpmux` langsung memperbaiki: banner menjadi
+  `SSH-2.0-dropbear_2019.78`.
+
+### Pelajaran operasional
+Restart **ketiga** unit mux setiap kali file `.py`-nya diubah:
+`mytunnel-httpmux`, `mytunnel-sshws`, `mytunnel-tlsmux`. Restart salah satu saja
+TIDAK cukup — masing-masing memegang salinan kode sendiri di memori.
+
+### Verifikasi live (VPS 43.128.104.92, dari luar)
+```
+port 80   WS upgrade            -> SSH-2.0-dropbear_2019.78
+port 80   banner-only (raw SSH) -> SSH-2.0-dropbear_2019.78
+port 80   banner + WS (pre-ssh) -> SSH-2.0-dropbear_2019.78
+port 8080/2082/8880 WS upgrade  -> SSH-2.0-dropbear_2019.78
+tunnel penuh port 80            -> 554 byte, kex lanjut, dropbear 2019
+```
+Mode raw-SSH langsung (banner dulu tanpa HTTP) hanya didukung di port **80**
+(oleh `mytunnel-httpmux`); 8080/2082/8880 lewat nginx `@sshws` yang mengharuskan
+WS upgrade lebih dulu — ini perilaku desain, bukan bug.
+
 ## v1.13.6 — 2026-11-18 — Semua jalur SSH kini Dropbear 2019.78 (bukan OpenSSH)
 
 Keluhan pemilik: klien (HTTP Custom / HTTP Injector) menampilkan **OpenSSH**,
