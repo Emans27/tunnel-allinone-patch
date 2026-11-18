@@ -11698,6 +11698,15 @@ DB_SSH="$ETC/db/ssh.txt"
 
 bh_log(){ echo "[$(date '+%Y-%m-%d %H:%M:%S')] [bot] $1" >> "$LOG" 2>/dev/null || true; }
 
+# Kirim blok akun ke admin via notif mono (HTML). Diam bila helper tak ada.
+_bh_notify_block(){
+  local block="${1:-}"
+  [ -z "$block" ] && return 0
+  if declare -f ah_notify_admin_mono >/dev/null 2>&1; then
+    ah_notify_admin_mono "$block" 2>/dev/null || true
+  fi
+}
+
 bh_status_text(){
   local os ip dom xray nginx ver
   os=$(get_os 2>/dev/null || echo "-")
@@ -11728,11 +11737,15 @@ bh_create_ssh(){
     if ! ssh_create "$user" "$pass" "$days" "$limit_ip" 2>&1; then return 1; fi
     local exp
     exp=$(ssh_get_field "$user" 3 2>/dev/null || echo "-")
+    # render sekali (output SSH asli) -> tampilkan & kirim notif mono dari teks yang sama
+    local _out
     if declare -f print_ssh_account_info >/dev/null 2>&1; then
-      print_ssh_account_info "$user" "$pass" "$exp" "$limit_ip" 2>/dev/null || true
+      _out=$(print_ssh_account_info "$user" "$pass" "$exp" "$limit_ip" 2>/dev/null)
     else
-      echo "User $user pass $pass exp $exp"
+      _out="User $user pass $pass exp $exp"
     fi
+    printf "%s\n" "$_out"
+    _bh_notify_block "$_out"
   else
     echo "ssh_create belum tersedia"
     return 1
@@ -11755,8 +11768,11 @@ bh_create_proto(){
   if ! proto_create "$proto" "$user" "$id" "$days" "$limit_ip" "$quota" 2>&1 | tail -n 5; then
     return 1
   fi
-  # satu fungsi output dipakai ulang Create/Trial/bot - jangan salin manual
-  print_proto_account_info "$proto" "$user" 2>/dev/null || gen_links "$proto" "$user" 2>/dev/null || echo "Akun $proto $user dibuat"
+  # render sekali -> tampilkan ke user & kirim notif mono dari teks yang sama
+  local _out
+  _out=$(print_proto_account_info "$proto" "$user" 2>/dev/null || gen_links "$proto" "$user" 2>/dev/null || echo "Akun $proto $user dibuat")
+  printf "%s\n" "$_out"
+  _bh_notify_block "$_out"
   bh_log "bot create $proto $user ${days}d"
 }
 

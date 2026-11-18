@@ -1,3 +1,27 @@
+## v1.13.2 — 2026-11-18 — Notif Create/Trial kini terkirim saat akun dibuat VIA BOT
+
+Akar masalah: saat akun dibuat melalui **bot Telegram** (`/create_ssh`, `/trial`),
+handler `bh_create_ssh` / `bh_create_proto` hanya menampilkan output di terminal dan
+**tidak memanggil fungsi notif**. Akibatnya notif mono tidak terkirim ke admin —
+padahal jalur **menu** (`menu/ssh.sh`) sudah benar memanggil `ah_notify_admin_mono`.
+
+Kondisi lain sudah benar: token bot & Admin ID valid (getMe ok), `ah_notify_admin_mono`
+bekerja (sendMessage `ok:true`).
+
+### Perbaikan (`bot/handlers.sh`)
+- Tambah helper `_bh_notify_block` -> kirim blok akun via `ah_notify_admin_mono`
+  (diam bila helper tak tersedia).
+- `bh_create_ssh`: render output SSH asli **sekali** (`_out`) -> tampilkan ke chat +
+  kirim notif dari teks yang sama (tidak render dua kali).
+- `bh_create_proto` (vmess/vless/trojan, termasuk `/trial`): sama — render sekali
+  via `print_proto_account_info`/`gen_links`, tampilkan + kirim notif.
+
+Trial SSH/proto melewati `bh_create_ssh`/`bh_create_proto`, jadi otomatis ikut.
+
+### Verifikasi live (VPS 43.128.104.92, bot @Muesea_bot)
+- `_bh_notify_block` -> rc=0; kirim notif mono HTML -> `ok:true` (msg_id 1322).
+- `bash -n` OK install.sh & handlers.sh; `mytunnel-bot` active setelah restart.
+
 ## v1.13.1 — 2026-11-18 — Fix email acme.sh ditolak Let's Encrypt
 
 Bug di `setup/cert.sh`: email acme.sh diambil dari `get_domain`, dan bila kosong
