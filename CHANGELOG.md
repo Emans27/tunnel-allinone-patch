@@ -1,3 +1,45 @@
+## v1.13.15 — 2026-11-19 — Menu 5: 5 versi Dropbear (2016-2020) sesuai spesifikasi
+
+Daftar versi sekarang: **2016.74, 2017.75, 2018.76, 2019.78, 2020.81** (nomor 1-5).
+
+### Yang diterapkan
+1. **Sumber**: `matt.ucc.asn.au/dropbear/releases` utama, `dropbear.nl/mirror/releases`
+   cadangan; curl lalu wget. SHA256 wajib cocok dengan `SHA256SUM.asc` resmi.
+2. **Compiler GCC 10-14**: dependensi `build-essential zlib1g-dev bzip2 libcrypt-dev`
+   dipasang sebelum configure. `SAFE_CFLAGS` sesuai spesifikasi:
+   `-O2 -fcommon -w -Wno-error -Wno-implicit-function-declaration -Wno-implicit-int
+   -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-unused-result`
+   `./configure CFLAGS=... --prefix=/usr --sysconfdir=/etc/dropbear`
+   `make PROGRAMS="dropbear dbclient dropbearkey dropbearconvert scp" -j2`
+3. **Host key**: setiap ganti biner, semua `/etc/dropbear/dropbear_*_host_key` dihapus
+   dan dibuat ulang (RSA 2048 + ECDSA) memakai `dropbearkey` versi baru — ini yang
+   membuat 2016-2019 tidak gagal start karena key ed25519 bawaan distro.
+   `apt-mark hold dropbear dropbear-bin` dijalankan.
+
+### Dua bug build yang ditemukan saat uji nyata
+- **`make CFLAGS=...` menghapus `-I` Makefile.** Dropbear memakai `CFLAGS+=`, jadi
+  argumen command-line *menimpa* seluruh CFLAGS termasuk `-I libtomcrypt/src/headers`.
+  Akibatnya 2016.74 gagal: `fatal error: tommath.h: No such file or directory`.
+  Fix: CFLAGS diberikan sebagai **variabel lingkungan** (`CFLAGS="$SAFE_CFLAGS" make ...`),
+  bukan argumen. Setelah itu 0 error, **0 warning**.
+- **`/usr/bin/scp` milik openssh-client.** `--prefix=/usr` + `PROGRAMS="... scp"`
+  akan menimpa scp OpenSSH yang dipakai admin. Fix: bila `/usr/bin/scp` dimiliki
+  openssh-client, binary scp Dropbear dipasang sebagai
+  `/usr/local/bin/scp-dropbear-<tahun>` dan aslinya tidak disentuh.
+
+### Verifikasi live (VPS 43.128.104.92) — semua diuji bergantian
+```
+1) Dropbear 2016 (v2016.74) checksum cocok -> build -> auth login OK
+2) Dropbear 2017 (v2017.75) checksum cocok -> build -> auth login OK
+3) Dropbear 2018 (v2018.76) checksum cocok -> build -> auth login OK
+4) Dropbear 2019 (v2019.78) checksum cocok -> build -> auth login OK
+5) Dropbear 2020 (v2020.81) checksum cocok -> build -> auth login OK
+setiap perpindahan: host key dibuat ulang (2 file), service active,
+banner sesuai versi (SSH-2.0-dropbear_<ver>)
+final 2019.78: service active, paket di-hold, jalur klien
+  WS 80/8080/2082/8880 + TLS 443 = SSH-2.0-dropbear_2019.78
+```
+
 ## v1.13.14 — 2026-11-19 — Checksum Dropbear resmi untuk semua versi, wajib
 
 ### Temuan: 2023.88 tidak pernah dirilis

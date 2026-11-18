@@ -14928,30 +14928,35 @@ RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1
 CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
 BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
 
+# CFLAGS wajib: GCC 10-14 (Ubuntu 22.04/24.04, Debian 11/12/13) memakai default
+# -fno-common dan strict C99 sehingga Dropbear lama gagal link / penuh warning.
+# -fcommon         -> selesaikan multiple-definition pada GCC 10+
+# -w               -> hilangkan SELURUH warning (mis. scp.c)
+# -Wno-error       -> jangan pernah ubah warning menjadi error
+SAFE_CFLAGS="-O2 -fcommon -w -Wno-error -Wno-implicit-function-declaration -Wno-implicit-int -Wno-int-conversion -Wno-incompatible-pointer-types -Wno-unused-result"
+
 pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 
-# SHA256 resmi dari https://matt.ucc.asn.au/dropbear/releases/SHA256SUM.asc
-# (file itu PGP-signed oleh maintainer Dropbear). Kosong = versi tak terdaftar.
+# SHA256 resmi dari https://matt.ucc.asn.au/dropbear/releases/SHA256SUM.asc (PGP-signed)
 _sha256_of() {
   case "$1" in
-    2019.77) echo "d91f78ebe633be1d071fd1b7e5535b9693794048b019e9f4bea257e1992b458d" ;;
+    2016.74) echo "2720ea54ed009af812701bcc290a2a601d5c107d12993e5d92c0f5f81f718891" ;;
+    2017.75) echo "6cbc1dcb1c9709d226dff669e5604172a18cf5dbf9a201474d5618ae4465098c" ;;
+    2018.76) echo "f2fb9167eca8cf93456a5fc1d4faf709902a3ab70dd44e352f3acbc3ffdaea65" ;;
     2019.78) echo "525965971272270995364a0eb01f35180d793182e63dd0b0c3eb0292291644a4" ;;
-    2020.79) echo "084f00546b1610a3422a0773e2c04cbe1a220d984209e033b548b49f379cc441" ;;
-    2020.80) echo "d927941b91f2da150b2033f1a88b6a47999bf0afb1493a73e9216cffdb5d7949" ;;
     2020.81) echo "48235d10b37775dbda59341ac0c4b239b82ad6318c31568b985730c788aac53b" ;;
-    2022.82) echo "3a038d2bbc02bf28bbdd20c012091f741a3ec5cbe460691811d714876aad75d1" ;;
-    2022.83) echo "bc5a121ffbc94b5171ad5ebe01be42746d50aa797c9549a4639894a16749443b" ;;
-    2024.84) echo "16e22b66b333d6b7e504c43679d04ed6ca30f2838db40a21f935c850dfc01009" ;;
-    2024.85) echo "86b036c433a69d89ce51ebae335d65c47738ccf90d13e5eb0fea832e556da502" ;;
-    2024.86) echo "e78936dffc395f2e0db099321d6be659190966b99712b55c530dd0a1822e0a5e" ;;
-    2025.87) echo "738b7f358547f0c64c3e1a56bbc5ef98d34d9ec6adf9ccdf01dc0bf2caa2bc8d" ;;
-    2025.89) echo "0d1f7ca711cfc336dc8a85e672cab9cfd8223a02fe2da0a4a7aeb58c9e113634" ;;
     *) echo "" ;;
   esac
 }
 
+# Label tampilan: 2016.74 -> "Dropbear 2016 (v2016.74)"
+_label_of() {
+  local v="$1" y
+  y=$(echo "$v" | cut -d. -f1)
+  echo "Dropbear $y (v$v)"
+}
+
 _dl_dropbear() {
-  # $1 = versi, $2 = target file
   local ver="$1" out="$2" m url
   for m in "https://matt.ucc.asn.au/dropbear/releases" "https://dropbear.nl/mirror/releases"; do
     url="$m/dropbear-$ver.tar.bz2"
@@ -14965,23 +14970,47 @@ _dl_dropbear() {
   return 1
 }
 
+# Regenerasi host key: Dropbear 2016-2019 belum bisa membaca key ed25519 bawaan
+# Ubuntu 22.04/24.04, sehingga service gagal start setelah downgrade.
+# Hapus semua key lama, buat ulang RSA + ECDSA dengan dropbearkey versi BARU.
+_regen_host_keys() {
+  local kd=/etc/dropbear kb=/usr/bin/dropbearkey
+  [ -x "$kb" ] || kb=/usr/local/bin/dropbearkey
+  if [ ! -x "$kb" ]; then
+    echo -e "${RED}dropbearkey tidak ditemukan - host key tidak bisa dibuat${RESET}"
+    return 1
+  fi
+  mkdir -p "$kd" 2>/dev/null || true
+  rm -f "$kd"/dropbear_*_host_key 2>/dev/null || true
+  echo -e "${DIM}Regenerasi host key (RSA 2048 + ECDSA)...${RESET}"
+  # entropi: dropbearkey bisa gagal di VPS baru
+  dpkg -s haveged >/dev/null 2>&1 && systemctl start haveged >/dev/null 2>&1 || true
+  if ! "$kb" -t rsa -s 2048 -f "$kd/dropbear_rsa_host_key" >/dev/null 2>&1; then
+    echo -e "${RED}Gagal membuat RSA host key${RESET}"
+    echo -e "${DIM}  Coba: apt-get install -y haveged && systemctl start haveged${RESET}"
+    return 1
+  fi
+  "$kb" -t ecdsa -f "$kd/dropbear_ecdsa_host_key" >/dev/null 2>&1 \
+    || echo -e "${YELLOW}  ECDSA host key gagal (RSA tetap dipakai)${RESET}"
+  chmod 600 "$kd"/dropbear_*_host_key 2>/dev/null || true
+  local n; n=$(ls -1 "$kd"/dropbear_*_host_key 2>/dev/null | wc -l)
+  echo -e "${GREEN}Host key dibuat ulang: $n file${RESET}"
+  return 0
+}
+
 _build_dropbear() {
-  # $1 = versi. Hasil: /usr/local/sbin/dropbear-<major> + symlink + wrapper
   local ver="$1"
-  local want_sha tmp ok=0 got dir
+  local want_sha tmp dir got
   want_sha=$(_sha256_of "$ver")
+  if [ -z "$want_sha" ]; then
+    echo -e "${RED}Versi $ver tidak punya checksum resmi - DITOLAK${RESET}"
+    return 1
+  fi
   tmp=$(mktemp -d) || { echo -e "${RED}mktemp gagal${RESET}"; return 1; }
 
   echo -e "${DIM}Mengunduh dropbear-$ver.tar.bz2...${RESET}"
   if ! _dl_dropbear "$ver" "$tmp/db.tar.bz2"; then
     echo -e "${RED}Unduh gagal. Cek koneksi ke matt.ucc.asn.au / dropbear.nl${RESET}"
-    echo -e "${DIM}URL: https://matt.ucc.asn.au/dropbear/releases/dropbear-$ver.tar.bz2${RESET}"
-    rm -rf "$tmp" 2>/dev/null; return 1
-  fi
-  if [ -z "$want_sha" ]; then
-    echo -e "${RED}Versi $ver tidak punya checksum resmi - DITOLAK${RESET}"
-    echo -e "${DIM}  Hanya versi yang terdaftar di SHA256SUM.asc resmi yang dipasang.${RESET}"
-    echo -e "${DIM}  Daftar valid: $(grep -v '^$' "$VER_FILE" 2>/dev/null | tr '\n' ' ')${RESET}"
     rm -rf "$tmp" 2>/dev/null; return 1
   fi
   got=$(sha256sum "$tmp/db.tar.bz2" 2>/dev/null | awk '{print $1}')
@@ -14989,12 +15018,10 @@ _build_dropbear() {
     echo -e "${RED}Checksum SHA256 TIDAK COCOK - unduhan ditolak${RESET}"
     echo -e "${DIM}  harap: $want_sha${RESET}"
     echo -e "${DIM}  dapat: ${got:-?}${RESET}"
-    echo -e "${DIM}  Kemungkinan unduhan rusak/diubah. Coba lagi.${RESET}"
     rm -rf "$tmp" 2>/dev/null; return 1
   fi
-  echo -e "${GREEN}✓ Checksum SHA256 cocok (SHA256SUM.asc resmi)${RESET}"
+  echo -e "${GREEN}✓ Checksum SHA256 cocok${RESET}"
 
-  echo -e "${DIM}Extract...${RESET}"
   if ! tar -xjf "$tmp/db.tar.bz2" -C "$tmp" 2>/dev/null; then
     echo -e "${RED}Extract gagal (bzip2 terpasang?)${RESET}"
     rm -rf "$tmp" 2>/dev/null; return 1
@@ -15005,17 +15032,15 @@ _build_dropbear() {
     rm -rf "$tmp" 2>/dev/null; return 1
   fi
 
-  # GCC 10+ default -fno-common -> dropbear lama gagal link tanpa -fcommon.
-  local db_cflags="" gccmaj
-  gccmaj=$(gcc -dumpversion 2>/dev/null | cut -d. -f1)
-  if [ -n "$gccmaj" ] && [ "$gccmaj" -ge 10 ] 2>/dev/null; then db_cflags="-fcommon"; fi
-
-  echo -e "${DIM}Build (gcc=${gccmaj:-?} cflags=${db_cflags:-default})...${RESET}"
-  if ! ( cd "$dir" && CFLAGS="-O2 ${db_cflags} -Wno-error -Wno-unused-result" \
-           ./configure --prefix=/usr/local --sysconfdir=/etc/dropbear >/dev/null 2>&1 \
-         && make -j"$(nproc)" PROGRAMS="dropbear dropbearkey dbclient" >/dev/null 2>&1 ); then
-    echo -e "${RED}Build gagal. Pastikan build-essential + zlib1g-dev terpasang.${RESET}"
-    echo -e "${DIM}Apt: apt-get install -y build-essential zlib1g-dev bzip2${RESET}"
+  echo -e "${DIM}Build (gcc=$(gcc -dumpversion 2>/dev/null || echo ?), prefix=/usr)...${RESET}"
+  # PENTING: CFLAGS diberikan sebagai VARIABEL LINGKUNGAN, bukan argumen make.
+  # `make CFLAGS=...` menimpa (bukan menambah) CFLAGS di Makefile Dropbear,
+  # sehingga `-I libtomcrypt/src/headers` hilang dan build gagal dengan
+  # "fatal error: tommath.h: No such file or directory" pada versi <= 2016.
+  if ! ( cd "$dir" \
+        && ./configure CFLAGS="$SAFE_CFLAGS" --prefix=/usr --sysconfdir=/etc/dropbear >/dev/null 2>&1 \
+        && CFLAGS="$SAFE_CFLAGS" make PROGRAMS="dropbear dbclient dropbearkey dropbearconvert scp" -j2 >/dev/null 2>&1 ); then
+    echo -e "${RED}Build gagal. Pastikan build-essential zlib1g-dev bzip2 libcrypt-dev terpasang.${RESET}"
     rm -rf "$tmp" 2>/dev/null; return 1
   fi
   if [ ! -x "$dir/dropbear" ]; then
@@ -15023,16 +15048,21 @@ _build_dropbear() {
     rm -rf "$tmp" 2>/dev/null; return 1
   fi
 
-  # nama binary per versi supaya beberapa versi bisa hidup berdampingan
+  # Simpan binary per versi agar bisa bolak-balik, lalu wrapper /usr/sbin/dropbear.
   local tag; tag=$(echo "$ver" | cut -d. -f1)
   install -m 755 "$dir/dropbear" "/usr/local/sbin/dropbear-$tag" || { rm -rf "$tmp"; return 1; }
   install -m 755 "$dir/dropbearkey" "/usr/local/bin/dropbearkey-$tag" 2>/dev/null || true
-  ln -sf "/usr/local/sbin/dropbear-$tag" /usr/local/sbin/dropbear
 
-  # Wrapper /usr/sbin/dropbear (jalur init.d/systemd Debian) -> binary versi ini
+  # Backup binary apt asli sekali saja sebelum ditimpa
   if [ -f /usr/sbin/dropbear ] && [ ! -L /usr/sbin/dropbear ] && ! grep -q "exec /usr/local/sbin/dropbear-" /usr/sbin/dropbear 2>/dev/null; then
     cp -a /usr/sbin/dropbear "/usr/sbin/dropbear.apt-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
   fi
+  # /usr/bin/dropbearkey: installer spesifikasi minta /usr/bin/dropbearkey = versi baru.
+  if [ -f /usr/bin/dropbearkey ] && [ ! -L /usr/bin/dropbearkey ] && ! grep -q "exec /usr/local/bin/dropbearkey-" /usr/bin/dropbearkey 2>/dev/null; then
+    cp -a /usr/bin/dropbearkey "/usr/bin/dropbearkey.apt-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+  fi
+  ln -sf "/usr/local/bin/dropbearkey-$tag" /usr/bin/dropbearkey 2>/dev/null || true
+
   cat > /usr/sbin/dropbear <<WRAP
 #!/bin/sh
 # mytunnel wrapper - selalu jalankan Dropbear $ver
@@ -15040,75 +15070,115 @@ exec /usr/local/sbin/dropbear-$tag "\$@"
 WRAP
   chmod 755 /usr/sbin/dropbear
 
+  # scp: JANGAN timpa /usr/bin/scp milik openssh-client (dipakai admin/SCP).
+  # Pasang sebagai /usr/local/bin/scp bila openssh-client memiliki /usr/bin/scp.
+  if [ -x "$dir/scp" ]; then
+    if dpkg -S /usr/bin/scp 2>/dev/null | grep -q openssh; then
+      install -m 755 "$dir/scp" "/usr/local/bin/scp-dropbear-$tag" 2>/dev/null || true
+    else
+      install -m 755 "$dir/scp" /usr/bin/scp 2>/dev/null || true
+    fi
+  fi
+
   rm -rf "$tmp" 2>/dev/null
-  : > "$LOG" 2>/dev/null || true
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] dropbear -> $ver built from source (cflags=${db_cflags:-default})" >> "$LOG" 2>/dev/null || true
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] dropbear -> $ver built from source (prefix=/usr)" >> "$LOG" 2>/dev/null || true
   return 0
 }
 
 main() {
-  local cur
+  local cur curver
   cur=$(/usr/sbin/dropbear -V 2>&1 | head -1 || echo "-")
+  curver=$(echo "$cur" | grep -oE 'v?[0-9]{4}\.[0-9]+' | head -1 | tr -d 'v')
+
   if [ "${1:-}" = "list" ]; then
     echo -e " Versi sekarang: ${CYAN}$cur${RESET}"
-    [ -f "$VER_FILE" ] && { echo -e "${DIM}Daftar versi:${RESET}"; grep -v '^$' "$VER_FILE" 2>/dev/null | sed 's/^/  /'; } || echo -e "${DIM}(file versi kosong: $VER_FILE)${RESET}"
+    if [ -f "$VER_FILE" ]; then
+      echo -e "${DIM}Daftar versi:${RESET}"
+      local i=0 v
+      while IFS= read -r v; do
+        [ -z "$v" ] && continue
+        i=$((i+1))
+        printf "  %2d.) %s\n" "$i" "$(_label_of "$v")"
+      done < "$VER_FILE"
+    else
+      echo -e "${DIM}(file versi kosong: $VER_FILE)${RESET}"
+    fi
     return
   fi
 
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
   printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Change Dropbear Version"
+  echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
+  local i=0 v
+  while IFS= read -r v; do
+    [ -z "$v" ] && continue
+    i=$((i+1))
+    local mark=""
+    [ "$v" = "$curver" ] && mark="  <- aktif"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" " $i.) $(_label_of "$v")$mark"
+  done < "$VER_FILE" 2>/dev/null
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo -e " Versi sekarang: ${CYAN}$cur${RESET}"
-  if [ -f "$VER_FILE" ]; then
-    echo -e "${DIM}Daftar versi (build from source):${RESET}"
-    grep -v '^$' "$VER_FILE" 2>/dev/null | sed 's/^/  /'
-  else
-    echo -e "${DIM}File versi tidak ada: $VER_FILE${RESET}"
-  fi
-  echo -e "${DIM}Kosongkan untuk batal. Port layanan tetap (90).${RESET}"
-  read -rp " Versi baru: " ver 2>/dev/null || return
-  ver=$(echo "$ver" | tr -d ' \n')
-  [ -z "$ver" ] && { echo "Batal"; pause; return; }
-  if [[ ! "$ver" =~ ^[0-9]{4}\.[0-9]{2}$ ]]; then
-    echo -e "${RED}Format versi: YYYY.NN (contoh 2019.78)${RESET}"; pause; return
-  fi
-  if [ "$cur" = "Dropbear v$ver" ] || echo "$cur" | grep -q "v$ver"; then
-    echo -e "${YELLOW}Versi $ver sudah aktif${RESET}"; pause; return
-  fi
-  if [ -f "$VER_FILE" ] && ! grep -qx "$ver" "$VER_FILE" 2>/dev/null; then
-    echo -e "${YELLOW}Versi $ver tidak ada di daftar (akan dicoba unduh dari situs resmi).${RESET}"
-  fi
-  if ! fh_need_confirm " Install Dropbear $ver dari source?"; then echo "Batal"; pause; return; fi
+  echo -e "${DIM}Kosongkan untuk batal. Port 90 tetap; host key dibuat ulang otomatis.${RESET}"
+  echo -ne "${BOLD}Pilih nomor / versi: ${RESET}"
+  read -r inp 2>/dev/null || return
+  inp=$(echo "$inp" | tr -d ' \n')
+  [ -z "$inp" ] && { echo "Batal"; pause; return; }
 
-  echo -e "${DIM}Install Dropbear $ver...${RESET}"
+  local ver=""
+  if [[ "$inp" =~ ^[0-9]+$ ]]; then
+    ver=$(grep -v '^$' "$VER_FILE" 2>/dev/null | sed -n "${inp}p")
+    [ -z "$ver" ] && { echo -e "${RED}Nomor tidak ada di daftar${RESET}"; pause; return; }
+  else
+    ver="$inp"
+    if [[ ! "$ver" =~ ^[0-9]{4}\.[0-9]{2}$ ]]; then
+      echo -e "${RED}Format versi: YYYY.NN (contoh 2019.78)${RESET}"; pause; return
+    fi
+  fi
+
+  if [ "$ver" = "$curver" ]; then
+    echo -e "${YELLOW}$(_label_of "$ver") sudah aktif${RESET}"; pause; return
+  fi
+  if ! fh_need_confirm " Install $(_label_of "$ver") dari source?"; then echo "Batal"; pause; return; fi
+
   if [ -n "$BASE" ]; then
     echo "[TEST MODE] simulasi install dropbear $ver" | tee -a "$LOG" 2>/dev/null
     echo "$ver" > "${BASE}/var/log/dropbear-version.sim" 2>/dev/null || true
     echo -e "${GREEN}Simulasi selesai${RESET}"; fh_log "dropbear version -> $ver (test)"; pause; return
   fi
 
-  # dependensi build
-  for pkg in build-essential zlib1g-dev bzip2; do
-    dpkg -s "$pkg" >/dev/null 2>&1 || apt-get install -y "$pkg" >/dev/null 2>&1 || true
-  done
+  # Dependensi build (spesifikasi: build-essential, zlib1g-dev, bzip2, libcrypt-dev)
+  echo -e "${DIM}Menyiapkan dependensi build...${RESET}"
+  apt-get update -y >/dev/null 2>&1 || true
+  apt-get install -y build-essential zlib1g-dev bzip2 libcrypt-dev >/dev/null 2>&1 || {
+    echo -e "${RED}Gagal memasang dependensi build${RESET}"; pause; return; }
 
   if ! _build_dropbear "$ver"; then
-    echo -e "${RED}Gagal memasang Dropbear $ver. Versi lama tetap aktif.${RESET}"
+    echo -e "${RED}Gagal memasang $(_label_of "$ver"). Versi lama tetap aktif.${RESET}"
     pause; return
   fi
 
+  # Host key WAJIB dibuat ulang setelah binary diganti (2016-2019 tak dukung ed25519)
+  _regen_host_keys || { echo -e "${RED}Host key gagal - service mungkin tidak start${RESET}"; }
+
+  # Kunci paket agar update OS tidak menimpa binary hasil build
+  command -v apt-mark >/dev/null 2>&1 && apt-mark hold dropbear dropbear-bin >/dev/null 2>&1 || true
+
+  systemctl daemon-reload >/dev/null 2>&1 || true
   systemctl restart dropbear 2>/dev/null || service dropbear restart 2>/dev/null || true
   sleep 2
+
   local new_ver
   new_ver=$(/usr/sbin/dropbear -V 2>&1 | head -1)
   if echo "$new_ver" | grep -q "v$ver"; then
-    echo -e " ${GREEN}✓ Versi aktif: $new_ver${RESET}"
+    echo -e " ${GREEN}✓ Aktif: $new_ver${RESET}"
   else
-    echo -e " ${YELLOW}⚠ Terpasang, tapi service melapor: $new_ver${RESET}"
-    echo -e "${DIM}  Cek: systemctl status dropbear || journalctl -u dropbear -n 20${RESET}"
+    echo -e " ${RED}✗ Service melapor: $new_ver${RESET}"
+    echo -e "${DIM}  Cek: journalctl -u dropbear -n 20${RESET}"
   fi
-  echo -e "${DIM} Port 90 tetap; banner & akun tidak berubah.${RESET}"
-  fh_log "dropbear version -> $ver ($new_ver)"
+  local st; st=$(systemctl is-active dropbear 2>/dev/null)
+  echo -e " ${DIM}service=$st | port 90 | host key baru | paket di-hold${RESET}"
+  fh_log "dropbear version -> $ver ($new_ver, service=$st)"
   pause
 }
 
@@ -15324,11 +15394,11 @@ __EMBED_EOF__
 fi
 chmod 644 "$ETC/config/brand.txt" 2>/dev/null || true
 cat > "$ETC/config/dropbear_versions.txt" << '__EMBED_EOF__'
+2016.74
+2017.75
+2018.76
 2019.78
 2020.81
-2022.83
-2024.86
-2025.89
 __EMBED_EOF__
 chmod 644 "$ETC/config/dropbear_versions.txt"
 # Versi TIDAK boleh di-hardcode: dulu tertulis "v1.10.5" sehingga setiap instalasi
