@@ -1,3 +1,55 @@
+## v1.13.12 — 2026-11-19 — Audit fungsional 17 opsi menu Features: 4 bug diperbaiki
+
+Bukan sekadar "menu tampil", tapi tiap opsi diuji sampai efek nyata di sistem.
+
+### 1. Opsi 4 (Speed VPS) gagal total
+`speedtest --simple` -> `Unrecognized option: --simple`. Flag itu milik
+`speedtest-cli` (Python), bukan Ookla `speedtest` 1.2.x yang terpasang.
+Fix: deteksi dukungan `--format`, pakai `-f csv`, lalu parse kolom dengan
+indeks yang benar (0 server, 2 latency, 5 download bps, 6 upload bps) dan
+tampilkan rapi: Server / Ping / Download / Upload.
+Catatan: ping di indeks **2**, bukan 4 (4 = packet loss) — sempat salah tampil "0 ms".
+
+### 2. Opsi 13 (Auto Update) melaporkan versi basi
+`install.sh` menulis `version.txt` dari blok embed hardcoded `v1.10.5`, sehingga
+setiap instalasi baru melapor "Lokal: v1.10.5" walau kode terpasang jauh lebih baru.
+Fix: versi diambil berurutan dari `MYTUNNEL_VERSION`, file `VERSION` di sebelah
+installer, lalu angka versi pada nama file; fallback `v0.0.0` (bukan angka palsu).
+
+### 3. `lib/banner_guard.sh` tidak pernah dibuat
+Installer hanya menjalankan `chmod 644 "$ETC/lib/banner_guard.sh"` tanpa pernah
+menulis filenya. Akibatnya opsi "Jadikan banner permanen" & "Pasang cron
+banner_guard" selalu menjawab "banner_guard tidak tersedia", dan status banner
+di menu Security tampil `n/a`.
+Fix: file ditulis lengkap (`bg_status`, `bg_enforce`, `bg_unlock`).
+Terverifikasi: banner terkunci `----i---------e-------`, penulisan langsung
+ditolak, `bg_unlock` melepas kunci.
+
+### 4. `cron/banner_guard.sh` juga tidak pernah dibuat
+Pola bug sama (chmod tanpa tulis), jadi cron `*/5` gagal diam-diam.
+Fix: file ditulis dan diuji — rc=0, banner kembali dikunci sesuai config.
+
+### Verifikasi fungsional (VPS 43.128.104.92)
+```
+ 1 Check Bandwidth      4 baris data vnstat (eth0, daily/5min)
+ 2 Auto Reboot          menu jadwal + reboot sekarang
+ 3 Lock Time            LOCK_MIN=15 tersimpan & dibaca limitip.sh
+ 4 Speed VPS            Download 20.8 Mbps, Ping 0.7 ms
+ 5 Dropbear Version     v2019.78 (3 versi alternatif terdaftar)
+ 6 Check All Service    21 ON, 0 OFF
+ 7 Backup               zip 325K, 155 file
+ 8 Restore              2 backup terdaftar, validasi isi OK
+ 9 Change Domain        sg2.sunekvpn.cc.cd (DNS check nyata)
+10 Banner               40 byte tersinkron ke /etc/dropbear/banner
+11 Start/Stop Service   start/stop/restart/status per layanan
+12 Security             fail2ban active, ufw active, banner lock/unlock
+13 Auto Update          lokal v1.13.11 == repo v1.13.11
+14 Info System          Debian 12, Xray/Nginx/Dropbear, disk & RAM
+15 Dropbear legacy      /usr/local/sbin/dropbear-2019 ada
+16 Advanced             WARP/Routing/SlowDNS/SSH tambahan; slowdns active
+17 Back to Menu         kembali ke menu utama
+```
+
 ## v1.13.11 — 2026-11-19 — Menu rata 60 kolom + 7 menu tak lagi hang saat EOF
 
 ### Bug 1: nomor menu tidak rata & border kanan terputus

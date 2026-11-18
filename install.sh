@@ -2074,6 +2074,69 @@ bg_status() {
 }
 __EMBED_EOF__
 chmod 644 "$ETC/lib/brand_guard.sh" 2>/dev/null || true
+# banner_guard.sh: dulu hanya di-chmod tanpa pernah ditulis, sehingga menu
+# "banner permanen" & "cron banner_guard" selalu gagal ("banner_guard tidak tersedia").
+cat > "$ETC/lib/banner_guard.sh" << '__EMBED_EOF__'
+#!/bin/bash
+# mytunnel lib/banner_guard.sh - kunci banner SSH (chattr +i) + paksa kembali
+# shellcheck disable=SC1091,SC1090,SC2154
+if [[ "${BASE:-}" == *"/etc/mytunnel"* ]]; then
+  ETC="$BASE"
+else
+  BASE="${MYTUNNEL_PREFIX:-}"
+  ETC="${BASE}/etc/mytunnel"
+fi
+BG_SRC="$ETC/config/banner.txt"
+BG_DST="/etc/dropbear/banner"
+BG_SSHD="/etc/ssh/sshd_config"
+BG_LOG="${BASE}/var/log/mytunnel.log"
+
+_bg_immutable() {
+  local f="$1" a
+  command -v lsattr >/dev/null 2>&1 || return 1
+  [ -e "$f" ] || return 1
+  a=$(lsattr -d "$f" 2>/dev/null | awk '{print $1}')
+  case "$a" in *i*) return 0 ;; *) return 1 ;; esac
+}
+
+bg_status() {
+  if _bg_immutable "$BG_DST"; then
+    echo "PERMANEN (terkunci)"
+  elif _bg_immutable "$BG_SRC"; then
+    echo "PERMANEN (sumber terkunci)"
+  else
+    echo "TERBUKA (bisa diubah)"
+  fi
+}
+
+# paksa banner di disk kembali sesuai config/banner.txt lalu kunci
+bg_enforce() {
+  if [ ! -f "$BG_SRC" ]; then
+    echo "banner.txt tidak ada: $BG_SRC"
+    return 1
+  fi
+  mkdir -p "$(dirname "$BG_DST")" 2>/dev/null || true
+  _bg_immutable "$BG_DST" && chattr -i "$BG_DST" 2>/dev/null
+  _bg_immutable "$BG_SRC" && chattr -i "$BG_SRC" 2>/dev/null
+  cp -a "$BG_SRC" "$BG_DST" 2>/dev/null || { echo "gagal menyalin banner"; return 1; }
+  chmod 644 "$BG_DST" 2>/dev/null || true
+  chattr +i "$BG_DST" 2>/dev/null || { echo "chattr +i gagal (filesystem tidak mendukung?)"; return 1; }
+  # OpenSSH: tambahkan Banner bila belum ada
+  if [ -f "$BG_SSHD" ] && ! grep -qiE "^\s*Banner" "$BG_SSHD" 2>/dev/null; then
+    echo "Banner $BG_DST" >> "$BG_SSHD" 2>/dev/null || true
+    sshd -t >/dev/null 2>&1 && systemctl reload ssh >/dev/null 2>&1 || true
+  fi
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] banner_guard: dikunci" >> "$BG_LOG" 2>/dev/null || true
+  echo "Banner dikunci permanen: $BG_DST"
+}
+
+bg_unlock() {
+  _bg_immutable "$BG_DST" && chattr -i "$BG_DST" 2>/dev/null
+  _bg_immutable "$BG_SRC" && chattr -i "$BG_SRC" 2>/dev/null
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] banner_guard: dibuka" >> "$BG_LOG" 2>/dev/null || true
+  echo "Banner dibuka (bisa diubah lagi)"
+}
+__EMBED_EOF__
 chmod 644 "$ETC/lib/banner_guard.sh" 2>/dev/null || true
 chmod 644 "$ETC/lib/features_helpers.sh"
 cat > "$ETC/lib/advanced_helpers.sh" << '__EMBED_EOF__'
@@ -11657,6 +11720,18 @@ bg_enforce >/dev/null 2>&1 || true
 exit 0
 __EMBED_EOF__
 chmod 755 "$ETC/cron/brand_guard.sh" 2>/dev/null || true
+# cron/banner_guard.sh juga dulu hanya di-chmod tanpa ditulis -> cron */5 selalu
+# gagal diam-diam. Isinya: paksa banner kembali ke isi config/banner.txt.
+cat > "$ETC/cron/banner_guard.sh" << '__EMBED_EOF__'
+#!/bin/bash
+# mytunnel cron/banner_guard.sh - paksa banner SSH sesuai config/banner.txt
+# shellcheck disable=SC1091,SC1090,SC2154
+BASE="${MYTUNNEL_PREFIX:-}"
+ETC="${BASE}/etc/mytunnel"
+if [ -f "$ETC/lib/banner_guard.sh" ]; then . "$ETC/lib/banner_guard.sh" 2>/dev/null || exit 0; else exit 0; fi
+bg_enforce >/dev/null 2>&1 || true
+exit 0
+__EMBED_EOF__
 chmod 755 "$ETC/cron/banner_guard.sh" 2>/dev/null || true
 chmod 755 "$ETC/cron/bot_notify.sh"
 cat > "$ETC/bot/bot.sh" << '__EMBED_EOF__'
@@ -13480,7 +13555,30 @@ run_speedtest() {
     pause; return
   fi
   if command -v speedtest >/dev/null 2>&1; then
-    speedtest --simple 2>&1 | head -n 20; pause; return
+    # Ookla speedtest 1.2.x TIDAK punya --simple (itu milik speedtest-cli).
+    # Pakai --format untuk output ringkas yang bisa dibaca.
+    local _f="" _v
+    _v=$(speedtest --version 2>/dev/null | grep -oE "1\.[0-9]+\.?[0-9]*" | head -1)
+    speedtest --help 2>/dev/null | grep -q -- "--format" && _f="--format=csv"
+    echo -e "${DIM}Menjalankan speedtest (Ookla ${_v:-?})...${RESET}"
+    if [ -n "$_f" ]; then
+      # csv: server,id,lat,lon,ping,download(bps),upload(bps),...
+      local _raw
+      _raw=$(speedtest -f csv 2>/dev/null | head -1)
+      if [ -n "$_raw" ]; then
+        printf '%s\n' "$_raw" | awk -F'","' '{
+          srv=$1; gsub(/"/,"",srv);
+          dl=$6/1000000; ul=$7/1000000;
+          # kolom Ookla csv: 0 server,1 id,2 latency,3 jitter,4 packet-loss,5 dl,6 ul
+          printf "  Server   : %s\n  Ping     : %.1f ms\n  Download : %.1f Mbps\n  Upload   : %.1f Mbps\n", srv, $3, dl, ul
+        }'
+      else
+        echo -e "${RED}speedtest gagal (cek koneksi)${RESET}"
+      fi
+    else
+      speedtest 2>&1 | head -n 20
+    fi
+    pause; return
   fi
   echo -e "${YELLOW}speedtest-cli belum ada${RESET}"
   echo -ne " Install? [y/N]: "; read -r a 2>/dev/null || true
@@ -15096,9 +15194,24 @@ cat > "$ETC/config/dropbear_versions.txt" << '__EMBED_EOF__'
 
 __EMBED_EOF__
 chmod 644 "$ETC/config/dropbear_versions.txt"
-cat > "$ETC/config/version.txt" << '__EMBED_EOF__'
-v1.10.5
-__EMBED_EOF__
+# Versi TIDAK boleh di-hardcode: dulu tertulis "v1.10.5" sehingga setiap instalasi
+# baru melaporkan versi basi di menu Auto Update walau kode yang terpasang sudah
+# terbaru. Sumber kebenaran: MYTUNNEL_VERSION, lalu file VERSION di sebelah
+# installer, lalu nama script (mis. install-1.13.11.sh).
+_mt_version=""
+[ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
+if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
+  _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')
+fi
+if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$0")/VERSION" ]; then
+  _mt_version=$(head -1 "$(dirname "$0")/VERSION" 2>/dev/null | tr -d ' \r\n')
+fi
+if [ -z "$_mt_version" ]; then
+  _mt_version=$(printf '%s' "${0:-}" | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+  [ -n "$_mt_version" ] && case "$_mt_version" in v*) ;; *) _mt_version="v$_mt_version";; esac
+fi
+[ -z "$_mt_version" ] && _mt_version="v0.0.0"
+printf '%s\n' "$_mt_version" > "$ETC/config/version.txt"
 chmod 644 "$ETC/config/version.txt"
 cat > "$ETC/config/repo.txt" << '__EMBED_EOF__'
 https://raw.githubusercontent.com/Emans27/tunnel-allinone-patch/main
