@@ -1,3 +1,34 @@
+## v1.13.11 — 2026-11-19 — Menu rata 60 kolom + 7 menu tak lagi hang saat EOF
+
+### Bug 1: nomor menu tidak rata & border kanan terputus
+Dilaporkan lewat screenshot: nomor 1-9 berjarak satu spasi lebih ("` 1.)`"),
+10-17 tidak, dan garis `│` kanan tidak sejajar. Penyebab: padding ditulis manual
+per baris, sehingga lebarnya bervariasi 52-55 karakter meski kotaknya 60.
+Fix: seluruh baris opsi diganti `printf "│ %-56s │\n"` sehingga rata otomatis.
+Berlaku di `menu/features.sh` (18 baris), `menu/ssh.sh` (19), `menu/vmess.sh`,
+`menu/vless.sh`, `menu/trojan.sh` (18 masing-masing), `menu/advanced.sh` (6).
+Baris status WARP/Routing/SlowDNS juga dipersempit 1 karakter (61 -> 60).
+
+### Bug 2: 7 menu berputar tanpa henti saat stdin EOF
+Pola `read` tanpa guard di dalam `while true` membuat menu render ulang selamanya
+bila stdin tertutup (dipanggil dari skrip, cron, atau pipa non-interaktif).
+Terukur `menu/advanced.sh` = 390 baris sebelum timeout.
+Fix `read ... || break` pada pembaca menu di: `main.sh`, `features.sh`,
+`ssh.sh`, `vmess.sh`, `vless.sh`, `trojan.sh`, `advanced.sh`.
+(`features/banner.sh` & `features/lock_time.sh` sudah diperbaiki di v1.13.8.)
+
+### Verifikasi live (VPS 43.128.104.92)
+```
+menu/ssh.sh      24/25 baris @60  (1 sisa = baris prompt)
+menu/vmess.sh    23/24 @60
+menu/vless.sh    23/24 @60
+menu/trojan.sh   23/24 @60
+menu/advanced.sh 12/13 @60
+menu/features.sh 22/23 @60
+EOF 7 menu     : semua rc=0, tanpa loop
+17 opsi fitur  : 16 OK, 0 bermasalah
+```
+
 ## v1.13.10 — 2026-11-19 — Menu 6 "Check All Service": 21 layanan + ufw benar
 
 ### Bug 1: hanya 8 dari 21 layanan diperiksa
