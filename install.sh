@@ -5619,7 +5619,7 @@ import socket, threading, select, sys
 LISTEN_HOST="127.0.0.1"
 LISTEN_PORT=1443
 SSH_HOST="127.0.0.1"
-SSH_PORT=22
+SSH_PORT=90
 HTTP_HOST="127.0.0.1"
 HTTP_PORT=80
 def pipe(a,b):
@@ -8830,7 +8830,7 @@ import socket, threading, hashlib, base64, re, time, os
 LISTEN_HOST="127.0.0.1"
 LISTEN_PORT=10004
 SSH_HOST="127.0.0.1"
-SSH_PORT=22
+SSH_PORT=90
 LOG="/tmp/sshws.log"
 def log(msg):
     try:
@@ -9145,7 +9145,7 @@ import socket, threading, time, hashlib, base64, re
 LISTEN_HOST="0.0.0.0"
 LISTEN_PORT=80
 SSH_HOST="127.0.0.1"
-SSH_PORT=22
+SSH_PORT=90
 NGINX_BACKEND_HOST="127.0.0.1"
 NGINX_BACKEND_PORT=8080
 LOG="/tmp/httpmux.log"
@@ -9405,7 +9405,7 @@ import socket, threading, select, sys, time, os
 LISTEN_HOST="127.0.0.1"
 LISTEN_PORT=1443
 SSH_HOST="127.0.0.1"
-SSH_PORT=22
+SSH_PORT=90
 HTTP_HOST="127.0.0.1"
 HTTP_PORT=8080
 LOG="/tmp/tlsmux.log"

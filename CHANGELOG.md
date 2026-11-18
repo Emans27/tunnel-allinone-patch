@@ -1,3 +1,30 @@
+## v1.13.6 — 2026-11-18 — Semua jalur SSH kini Dropbear 2019.78 (bukan OpenSSH)
+
+Keluhan pemilik: klien (HTTP Custom / HTTP Injector) menampilkan **OpenSSH**,
+bukan `dropbear 2019`, walau `dropbear -V` = 2019.78 dan port 90 sudah benar.
+
+**Akar masalah**: seluruh mux SSH meneruskan ke port **22 (OpenSSH)**, bukan
+port **90 (Dropbear 2019)**. Dropbear hanya benar bila klien konek langsung ke 90;
+semua jalur WS/TLS menyajikan OpenSSH.
+
+Lokasi hardcode `SSH_PORT=22` yang diperbaiki -> `SSH_PORT=90`:
+- `usr/local/bin/mytunnel-tlsmux.py` (1443 -> ssh/http)
+- `setup/sshws.sh` (mytunnel-sshws.py, 10004)
+- `setup/httpmux.sh` (80 -> ssh/nginx)
+- `setup/tlsmux.sh` (1443 -> ssh/http)
+
+### Verifikasi live (VPS 43.128.104.92)
+Banner yang diterima klien, semua jalur:
+```
+WS  80/8080/2082/8880 : SSH-2.0-dropbear_2019.78
+TLS 4443              : SSH-2.0-dropbear_2019.78
+TLS 443 (SNI)         : SSH-2.0-dropbear_2019.78
+```
+Port 22 tetap OpenSSH (untuk admin/SCP), port 90 Dropbear 2019.
+Login password nyata via port 90 berhasil (user uji dibuat lalu dihapus).
+Catatan: `mytunnel-tlsmux` WAJIB di-restart, bukan hanya `mytunnel-stunnel`
+(stunnel 4443 -> tlsmux 1443, jadi cache lama tetap OpenSSH bila tlsmux tak restart).
+
 ## v1.13.5 — 2026-11-18 — Fix OHP: sumber 404 + flag ExecStart salah
 
 `setup/ohp.sh` gagal total di VPS: kedua URL rilis sudah **404** (repo
