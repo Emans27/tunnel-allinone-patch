@@ -1,3 +1,32 @@
+## v1.13.10 — 2026-11-19 — Menu 6 "Check All Service": 21 layanan + ufw benar
+
+### Bug 1: hanya 8 dari 21 layanan diperiksa
+`SERVICES="xray nginx sshd dropbear mytunnel-sshws cron vnstat ufw"` — 13 layanan
+inti tak pernah tampil maupun bisa dikelola dari menu: tlsmux, stunnel, slowdns,
+zivpn, squid, udpgw, ohp-ssh, openvpn tcp/udp/ssl, udp-custom, fail2ban, bot.
+Akibatnya layanan mati tidak terdeteksi sama sekali dari menu ini.
+Fix: daftar lengkap 21 entri. `restart_dead()` juga ikut memakai `$SERVICES`
+(sebelumnya hardcode 4 nama) supaya opsi 1 benar-benar menyalakan apa pun yang OFF.
+
+### Bug 2: ufw dilaporkan OFF padahal aktif
+`fh_svc_status` memakai `systemctl is-active`. `ufw.service` bersifat **oneshot**
+(exit setelah menerapkan rules), jadi `is-active` = inactive selamanya meski
+firewall berjalan. Menu menampilkan "ufw: OFF" pada server yang terproteksi.
+Fix: khusus `ufw`, status dibaca dari `ufw status` -> `Status: active`.
+
+### Kerapian tampilan
+Baris layanan sebelumnya meluber (nama panjang mendorong `│` kanan keluar kolom).
+Sekarang seluruh kotak 60 karakter: nama `%-22s`, status `%-4s`, padding dihitung,
+semua border 58 `─` (60 dengan sudut), baris opsi dipad sampai 60.
+
+### Verifikasi live (VPS 43.128.104.92)
+```
+lebar baris : 32 baris @ 60 karakter, 0 meluber
+layanan     : 21 diperiksa, semua ON
+ufw         : ON  (sebelumnya OFF)
+Akun        : ssh=1 vmess=1 vless=0 trojan=0
+```
+
 ## v1.13.9 — 2026-11-19 — fail2ban terpasang otomatis saat install
 
 Sebelumnya fail2ban hanya tersedia sebagai tombol manual di `features/security.sh`

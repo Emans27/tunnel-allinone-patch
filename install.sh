@@ -1924,6 +1924,12 @@ fh_svc_status() {
     echo "OFF"
     return
   fi
+  # ufw.service bersifat oneshot (exit setelah menerapkan rules), jadi
+  # `is-active` = inactive walau firewall benar-benar aktif. Cek dari rules.
+  if [ "$s" = "ufw" ]; then
+    if ufw status 2>/dev/null | grep -qi "^Status: active"; then echo "ON"; else echo "OFF"; fi
+    return
+  fi
   if systemctl is-active --quiet "$s" 2>/dev/null; then echo "ON"
   elif pgrep -x "$s" >/dev/null 2>&1; then echo "ON"
   elif service "$s" status >/dev/null 2>&1; then echo "ON"
@@ -13519,7 +13525,10 @@ RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1
 CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
 BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
 
-SERVICES="xray nginx sshd dropbear mytunnel-sshws cron vnstat ufw"
+# Daftar lengkap; sebelumnya hanya 8 entri sehingga 9 layanan inti
+# (zivpn, squid, slowdns, openvpn, ohp, udpgw, udp-custom, fail2ban, bot)
+# tidak pernah ikut diperiksa.
+SERVICES="xray nginx sshd dropbear mytunnel-sshws mytunnel-tlsmux mytunnel-stunnel mytunnel-slowdns zivpn squid mytunnel-udpgw mytunnel-ohp-ssh mytunnel-openvpn-tcp mytunnel-openvpn-udp mytunnel-openvpn-ssl udp-custom fail2ban mytunnel-bot cron vnstat ufw"
 
 pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 
@@ -13531,7 +13540,7 @@ show_all() {
   for s in $SERVICES; do
     st=$(fh_svc_status "$s" 2>/dev/null || echo "OFF")
     if [ "$st" = "ON" ]; then col="$GREEN"; else col="$RED"; fi
-    printf "${BLUE}│${RESET} %-14s : ${col}%-8s${RESET}                              ${BLUE}│${RESET}\n" "$s" "$st"
+    printf "${BLUE}│${RESET} %-22s${BOLD}:${RESET} ${col}%-4s${RESET}%-29s${BLUE}│${RESET}\n" "$s" "$st" ""
   done
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   _accts=""; for _p in ssh vmess vless trojan; do _n=$(grep -c . "$ETC/db/$_p.txt" 2>/dev/null || true); [[ "$_n" =~ ^[0-9]+$ ]] || _n=0; [ -n "$_accts" ] && _accts="$_accts "; _accts="$_accts$_p=$_n"; done
@@ -13542,7 +13551,8 @@ show_all() {
 restart_dead() {
   local s st
   echo -e "${DIM}Restart service yang OFF?${RESET}"
-  for s in xray nginx dropbear mytunnel-sshws; do
+  for s in $SERVICES; do
+    [ "$s" = "ufw" ] && continue
     st=$(fh_svc_status "$s" 2>/dev/null || echo "OFF")
     if [ "$st" = "OFF" ]; then
       echo -ne " ${YELLOW}$s OFF, restart? [y/N]: ${RESET}"; read -r a 2>/dev/null || true
@@ -13586,10 +13596,10 @@ main() {
     clear 2>/dev/null || printf "\033c"
     show_all
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    echo -e "${BLUE}│${RESET} 1.) Restart yang OFF                             ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 2.) Start/Stop/Restart satu service              ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 3.) Refresh                                      ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 4.) Kembali                                      ${BLUE}│${RESET}"
+    echo -e "${BLUE}│${RESET} 1.) Restart yang OFF                                     ${BLUE}│${RESET}"
+    echo -e "${BLUE}│${RESET} 2.) Start/Stop/Restart satu service                      ${BLUE}│${RESET}"
+    echo -e "${BLUE}│${RESET} 3.) Refresh                                              ${BLUE}│${RESET}"
+    echo -e "${BLUE}│${RESET} 4.) Kembali                                              ${BLUE}│${RESET}"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     read -rp " Pilih [1-4]: " c 2>/dev/null || c=4
     case "$c" in 1) restart_dead; pause ;; 2) manage_one ;; 3) continue ;; 4) break ;; *) echo -e "${RED}Tidak valid${RESET}"; sleep 1;; esac
