@@ -10543,7 +10543,10 @@ lr_xray_log_rows(){
   # waktu lokal sehingga langsung bisa dibandingkan dengan cutoff `date +%s` (UTC).
   cat "${files[@]}" 2>/dev/null | awk -v cut="$cutoff" '
     /accepted/ && /email:/ {
-      if (match($1, /^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/) && match($2, /^[0-9]{2}:[0-9]{2}:[0-9]{2}/)) {
+      # POSIX awk tidak dukung {n} interval quantifier -> pakai kelas eksplisit.
+      # Tanpa ini match() selalu gagal dan TIDAK ADA baris yang difilter window,
+      # sehingga traffic lama (jam lalu) tetap dianggap "user aktif".
+      if (match($1, /^[0-9][0-9][0-9][0-9]\/[0-9][0-9]\/[0-9][0-9]$/) && match($2, /^[0-9][0-9]:[0-9][0-9]:[0-9][0-9]/)) {
         split($1, A, "/"); split($2, B, ":")
         sec = mktime(A[1]" "A[2]" "A[3]" "B[1]" "B[2]" "int(B[3]))
         if (sec>0 && sec<cut) next

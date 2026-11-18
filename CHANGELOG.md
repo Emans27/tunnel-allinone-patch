@@ -1,3 +1,38 @@
+## v1.13.18 — 2026-11-19 — Fix: traffic lama tetap dihitung "user aktif"
+
+### Gejala
+User yang **tidak sedang memakai** akun tetap muncul di LOGIN REPORT dan ikut
+memicu notifikasi. Contoh: traffic `jose` terakhir jam **01:43**, pukul **02:36**
+(jarak 53 menit) user masih tampil pada window 15 menit.
+
+### Akar masalah
+`lr_xray_log_rows` (collector.sh) menyaring baris log Xray pada window memakai
+`awk match()` dengan regex `^[0-9]{4}\/...`. **POSIX awk tidak mendukung interval
+quantifier `{4}`** — pada mawk/gawk bawaan Ubuntu & Debian, `match()` itu **selalu
+gagal** (terverifikasi live: `NO-MATCH`).
+
+Karena pencocokan waktu gagal, cabang `if (sec>0 && sec<cut) next` **tidak pernah
+dijalankan** → tidak ada satu baris pun yang difilter → seluruh access.log sejak awal
+waktu dianggap "dalam window". Semua user yang pernah terhubung muncul sebagai aktif
+selamanya.
+
+### Perbaikan
+Regex dibuat pakai kelas eksplisit (portabel semua varian awk):
+```
+[0-9][0-9][0-9][0-9]\/[0-9][0-9]\/[0-9][0-9]   (tanggal)
+[0-9][0-9]:[0-9][0-9]:[0-9][0-9]                (jam, tanpa anchor $ agar .123456 lolos)
+```
+
+### Verifikasi live (kedua arah)
+```
+sebelum fix : jose (traffic 01:43) pada 02:36 tampil sebagai aktif  -> SALAH
+sesudah fix : jose pada window 15 menit -> jumlah=0, blok VMESS kosong,
+              pesan final = 0  -> BENAR
+uji positif : sisip 2 baris jose pada detik ini -> "jose | 0GB | 2 IP",
+              jumlah IP unik = 2  -> BENAR
+```
+Baris injeksi uji (IP `10.9.9.x`) dibersihkan dari access.log setelah tiap percobaan.
+
 ## v1.13.17 — 2026-11-19 — LOGIN REPORT: hanya protokol aktif + teks mono
 
 ### Sebelum
