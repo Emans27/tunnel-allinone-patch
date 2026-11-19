@@ -1,3 +1,23 @@
+## v1.14.1 — 2026-11-19 — fallback version basi (auto-sync saat build)
+
+### Gejala pasca rebuild v1.14.0
+Menu/status menampilkan `v1.13.34` padahal repo sudah `v1.14.0`.
+Hash install.sh di VPS = `7a6d04e1...` (cocok HEAD), jadi bukan installer basi.
+
+### Akar
+`install.sh` standalone tidak punya file `VERSION` di sebelahnya saat di-download
+(`wget -O install.sh`), jadi `_mt_version` jatuh ke fallback yang HARUS di-hardcode.
+Saat bump saya lupa mengubahnya -> tampil versi lama. Pola ini berulang tiap bump.
+
+### Perbaikan permanen
+- `install.sh`: placeholder `_mt_version="__BUNDLED_VERSION__"`
+- `.githooks/pre-commit`: otomatis injeksikan isi file `VERSION` ke placeholder saat
+  commit (via python3, bukan sed — escaping sed di bash ternyata rawan salah).
+- Fallback terakhir = `unknown` (bukan versi lama yang menyesatkan).
+
+### Verifikasi
+`bash .githooks/pre-commit` menginjeksikan `v1.14.1`; `bash -n install.sh` OK.
+
 ## v1.14.0 — 2026-11-19 — SINGLE-FILE: repo jadi 1 installer standalone
 
 ### Tujuan

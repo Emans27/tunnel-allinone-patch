@@ -46,6 +46,27 @@ for f in $staged; do
     esac
 done
 
+
+# --- Sinkronkan __BUNDLED_VERSION__ di install.sh dengan file VERSION ---
+# Mencegah fallback version basi saat bump (dulu manual, sering terlewat).
+if [ -f VERSION ] && [ -f install.sh ]; then
+    _v=$(head -1 VERSION | tr -d ' \r\n')
+    if ! grep -q "_mt_version="${_v}"" install.sh; then
+        if grep -q '^_mt_version="__BUNDLED_VERSION__"$' install.sh; then
+            python3 - "$_v" <<'PYVER'
+import sys
+v = sys.argv[1]
+p = "install.sh"
+s = open(p).read()
+s = s.replace('_mt_version="__BUNDLED_VERSION__"', '_mt_version="%s"' % v, 1)
+open(p, "w").write(s)
+PYVER
+            git add install.sh 2>/dev/null || true
+            printf '  (version di-install.sh disinkronkan -> %s)\n' "$_v" >&2
+        fi
+    fi
+fi
+
 # --- SHA256SUMS harus sinkron dengan file yang di-commit ---
 _sums_check() {
     local sums=SHA256SUMS _stale=() _want _have _f

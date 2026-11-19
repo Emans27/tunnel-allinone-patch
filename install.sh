@@ -15714,7 +15714,9 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # baru melaporkan versi basi di menu Auto Update walau kode yang terpasang sudah
 # terbaru. Sumber kebenaran: MYTUNNEL_VERSION, lalu file VERSION di sebelah
 # installer, lalu nama script (mis. install-1.13.11.sh).
-_mt_version=""
+# Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
+# VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
+_mt_version="v1.14.1"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')
@@ -15726,7 +15728,7 @@ if [ -z "$_mt_version" ]; then
   _mt_version=$(printf '%s' "${0:-}" | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1)
   [ -n "$_mt_version" ] && case "$_mt_version" in v*) ;; *) _mt_version="v$_mt_version";; esac
 fi
-[ -z "$_mt_version" ] && _mt_version="v1.13.34"
+[ -z "$_mt_version" ] && _mt_version="unknown"
 printf '%s\n' "$_mt_version" > "$ETC/config/version.txt"
 chmod 644 "$ETC/config/version.txt"
 cat > "$ETC/config/repo.txt" << '__EMBED_EOF__'
