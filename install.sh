@@ -15644,7 +15644,7 @@ if [ -z "$_mt_version" ]; then
   _mt_version=$(printf '%s' "${0:-}" | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1)
   [ -n "$_mt_version" ] && case "$_mt_version" in v*) ;; *) _mt_version="v$_mt_version";; esac
 fi
-[ -z "$_mt_version" ] && _mt_version="v1.13.27"
+[ -z "$_mt_version" ] && _mt_version="v1.13.28"
 printf '%s\n' "$_mt_version" > "$ETC/config/version.txt"
 chmod 644 "$ETC/config/version.txt"
 cat > "$ETC/config/repo.txt" << '__EMBED_EOF__'
