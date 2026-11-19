@@ -1,3 +1,46 @@
+## v1.13.24 — 2026-11-19 — ZiVPN tahan reboot: iptables dipasang ulang saat start
+
+### Gejala
+Klien ZiVPN `Connection lost: The connect timeout expired` setelah VPS reboot,
+padahal `systemctl is-active zivpn` = active dan `ss` menunjukkan `:5667` listen.
+
+### Akar masalah
+`setup/zivpn.sh` memasang tiga rule iptables (REDIRECT 6000-19999 -> 5667,
+ACCEPT 5667/udp, ACCEPT 6000:19999/udp) **hanya ke memori saat install**.
+Bukti di VPS:
+```
+iptables -t nat -L PREROUTING | grep 6000:19999   -> ada (sebelum reboot)
+grep '5667' /etc/iptables/rules.v4                -> kosong / folder tak ada
+grep '5667' /etc/ufw/user.rules                   -> 0
+dpkg -l iptables-persistent                        -> belum terpasang
+```
+Setelah reboot semua hilang -> paket UDP 5667 ditolak `Default: deny (incoming)`.
+Server tampak sehat, klien tetap timeout.
+
+Catatan: blok `# 5b) ufw: buka UDP ZiVPN` **sudah ada** di skrip tapi VPS ini
+di-install dari versi yang belum memuatnya, sehingga port tak pernah masuk
+`user.rules`. Tidak ada bug di blok 5b — hanya versi live yang tertinggal.
+
+### Perbaikan
+1. **`ExecStartPre` di `zivpn.service`** — memasang ketiga rule iptables secara
+   idempoten tiap service start (`-C` dulu, baru `-A`/`-I`). Ini yang membuat
+   ZiVPN pulih sendiri setelah reboot tanpa bergantung paket tambahan.
+2. `ufw allow 5667/udp` + `6000:19999/udp` dijalankan di VPS hidup
+   (blok 5b yang sudah ada, dieksekusi manual karena live tertinggal).
+
+### Hasil uji di VPS (bukan asumsi)
+```
+flush semua rule  -> NAT=0 IN=0
+restart zivpn     -> NAT=1 IN=1 INrange=1   (pulih otomatis)
+ufw reload        -> NAT=1 IN5667=1         (tidak terhapus)
+restart lagi      -> NAT=1 IN5667=1
+probe lokal UDP   -> counter dpt:5667 naik
+ssh 22            -> tetap LISTEN, tidak terkunci
+zivpn             -> active, NRestarts=0
+```
+Sebelum perbaikan: 8 klien sempat berhasil connect (rule masih di memori), jadi
+masalahnya memang bukan service/config — murni persistensi firewall.
+
 ## v1.13.23 — 2026-11-19 — Rapikan bagian SEBELUM menu (banner SSH + dashboard login)
 
 Menu sudah 60 kolom, tapi tampilan sebelum menu masih berantakan.

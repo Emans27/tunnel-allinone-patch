@@ -9912,6 +9912,9 @@ JSON_EOF
 fi
 
 # 4) systemd unit
+# ExecStartPre memasang iptables idempoten SAAT BOOT: tanpa ini rule REDIRECT
+# hanya di memori dan hilang setelah reboot -> klien ZiVPN "connect timeout".
+# -C dulu baru -A/-I agar idempoten.
 cat > /etc/systemd/system/zivpn.service <<'UNIT_EOF'
 [Unit]
 Description=ZiVPN UDP Server
@@ -9921,6 +9924,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/etc/zivpn
+ExecStartPre=/bin/bash -c 'iptables -t nat -C PREROUTING -p udp --dport 6000:19999 -j REDIRECT --to-ports 5667 2>/dev/null || iptables -t nat -A PREROUTING -p udp --dport 6000:19999 -j REDIRECT --to-ports 5667; iptables -C INPUT -p udp --dport 5667 -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport 5667 -j ACCEPT; iptables -C INPUT -p udp --dport 6000:19999 -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport 6000:19999 -j ACCEPT'
 ExecStart=/usr/local/bin/zivpn server -c /etc/zivpn/config.json
 Restart=always
 RestartSec=3
