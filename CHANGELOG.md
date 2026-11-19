@@ -1,3 +1,26 @@
+## v1.13.28 — 2026-11-19 — version.txt + hardening NAT ZiVPN
+
+### Temuan pasca rebuild VPS (semua layanan cek)
+- 8 layanan aktif (xray, nginx, dropbear 2019.78, mytunnel-sshws/httpmux/tlsmux/stunnel, zivpn)
+- SSH WS fix v1.13.27 masuk: `mytunnel-sshws.py` punya RAWMODE, `sshws.sh` wrapper bash
+- `mytunnel-slowdns`, `mytunnel-udpgw`, `udp-custom` = unit tak ada (opsional via menu, bukan gagal)
+
+### Bug 1: version.txt = v0.0.0
+Installer baca file `VERSION` di sebelah `install.sh`. Install via
+`bash -c "$(curl ...)"` tak men-download `VERSION` → fallback `v0.0.0`.
+**Fix:** fallback di-hardcode `v1.13.27`→`v1.13.28` (diupdate tiap bump).
+
+### Bug 2: nat PREROUTING `ACCEPT 5667` (baris 1) hilang
+Unit `zivpn.service` lama hanya REDIRECT `6000:19999` + INPUT ACCEPT; baris
+`ACCEPT 5667` di nat PREROUTING posisi 1 (perlindungan dari DNAT UDP-Custom)
+tidak dipasang saat boot. Kini ada di `ExecStartPre`, idempoten.
+
+### Bukti blok installer
+```
+bash -n install.sh OK
+PREROUTING 1 -p udp --dport 5667 -j ACCEPT: True
+```
+
 ## v1.13.27 — 2026-11-19 — CRITICAL: blok setup/sshws.sh rusak
 
 ### Gejala pasca v1.13.26

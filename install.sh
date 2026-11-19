@@ -10036,7 +10036,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/etc/zivpn
-ExecStartPre=/bin/bash -c 'iptables -t nat -C PREROUTING -p udp --dport 6000:19999 -j REDIRECT --to-ports 5667 2>/dev/null || iptables -t nat -A PREROUTING -p udp --dport 6000:19999 -j REDIRECT --to-ports 5667; iptables -C INPUT -p udp --dport 5667 -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport 5667 -j ACCEPT; iptables -C INPUT -p udp --dport 6000:19999 -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport 6000:19999 -j ACCEPT'
+ExecStartPre=/bin/bash -c 'iptables -t nat -C PREROUTING -p udp --dport 5667 -j ACCEPT 2>/dev/null || iptables -t nat -I PREROUTING 1 -p udp --dport 5667 -j ACCEPT; iptables -t nat -C PREROUTING -p udp --dport 6000:19999 -j REDIRECT --to-ports 5667 2>/dev/null || iptables -t nat -A PREROUTING -p udp --dport 6000:19999 -j REDIRECT --to-ports 5667; iptables -C INPUT -p udp --dport 5667 -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport 5667 -j ACCEPT; iptables -C INPUT -p udp --dport 6000:19999 -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport 6000:19999 -j ACCEPT'
 ExecStart=/usr/local/bin/zivpn server -c /etc/zivpn/config.json
 Restart=always
 RestartSec=3
@@ -15644,7 +15644,7 @@ if [ -z "$_mt_version" ]; then
   _mt_version=$(printf '%s' "${0:-}" | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1)
   [ -n "$_mt_version" ] && case "$_mt_version" in v*) ;; *) _mt_version="v$_mt_version";; esac
 fi
-[ -z "$_mt_version" ] && _mt_version="v0.0.0"
+[ -z "$_mt_version" ] && _mt_version="v1.13.27"
 printf '%s\n' "$_mt_version" > "$ETC/config/version.txt"
 chmod 644 "$ETC/config/version.txt"
 cat > "$ETC/config/repo.txt" << '__EMBED_EOF__'
