@@ -11483,26 +11483,31 @@ run_once() {
     fi
   done <<< "$raw"
 
-  local email total proto quota used quota_bytes
+  local email total proto quota used quota_bytes key
   for email in "${!sum[@]}"; do
     total="${sum[$email]}"
     [ "$total" -eq 0 ] && continue
-    # cari proto untuk email
+    # key stats API = email "<nama>-<proto>@tunnel", tetapi kolom 1 db = nama polos
+    # ("jose"). Tanpa normalisasi ini grep/awk "$1==email" TIDAK PERNAH cocok, jadi
+    # used_bytes tak pernah tercatat dan kuota tak pernah mengunci akun.
+    key=$(printf '%s' "$email" | sed -E 's/@.*$//; s/-?(vmess|vless|trojan)$//')
+    # cari proto untuk user
     for proto in vmess vless trojan; do
-      if grep -q "^${email}|" "$ETC/db/${proto}.txt" 2>/dev/null; then
-        _add_used "$proto" "$email" "$total"
-        quota=$(awk -F'|' -v u="$email" '$1==u{print $5}' "$ETC/db/${proto}.txt" 2>/dev/null | head -1)
-        used=$(awk -F'|' -v u="$email" '$1==u{print $6}' "$ETC/db/${proto}.txt" 2>/dev/null | head -1)
+      if grep -q "^${key}|" "$ETC/db/${proto}.txt" 2>/dev/null; then
+        _add_used "$proto" "$key" "$total"
+        quota=$(awk -F'|' -v u="$key" '$1==u{print $5}' "$ETC/db/${proto}.txt" 2>/dev/null | head -1)
+        used=$(awk -F'|' -v u="$key" '$1==u{print $6}' "$ETC/db/${proto}.txt" 2>/dev/null | head -1)
         [[ "$quota" =~ ^[0-9]+$ ]] || quota=0
         [[ "$used" =~ ^[0-9]+$ ]] || used=0
         quota_bytes=$((quota*1024*1024*1024))
         if [ "$quota" -gt 0 ] && [ "$used" -ge "$quota_bytes" ]; then
           # lock jika masih active
-          local st; st=$(awk -F'|' -v u="$email" '$1==u{print $7}' "$ETC/db/${proto}.txt" 2>/dev/null | head -1)
+          local st; st=$(awk -F'|' -v u="$key" '$1==u{print $7}' "$ETC/db/${proto}.txt" 2>/dev/null | head -1)
           if [ "$st" = "active" ]; then
+            # client di config memakai email penuh, db memakai nama -> hapus via email
             xray_del_client "$proto" "$email" 2>/dev/null || true
-            # set status locked
-            awk -F'|' -v OFS='|' -v u="$email" '$1==u{$7="locked"}1' "$ETC/db/${proto}.txt" > /tmp/.quota_tmp.$$ 2>/dev/null && cat /tmp/.quota_tmp.$$ > "$ETC/db/${proto}.txt" 2>/dev/null
+            # set status locked (db key = nama polos)
+            awk -F'|' -v OFS='|' -v u="$key" '$1==u{$7="locked"}1' "$ETC/db/${proto}.txt" > /tmp/.quota_tmp.$$ 2>/dev/null && cat /tmp/.quota_tmp.$$ > "$ETC/db/${proto}.txt" 2>/dev/null
             chmod 600 "$ETC/db/${proto}.txt" 2>/dev/null || true
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] quota lock $proto $email used=$used quota=${quota}GB" >> "$LOG" 2>/dev/null || true
             changed=1

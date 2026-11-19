@@ -1,3 +1,46 @@
+## v1.13.20 — 2026-11-19 — Fix kuota Xray tak pernah terkunci (key mismatch)
+
+### Gejala
+Kolom kuota (`$5`) dan limit IP (`$4`) di db akun diisi lewat menu, tapi **kuota
+Xray (vmess/vless/trojan) tidak pernah mengunci** akun walau pemakaian sudah
+melampaui batas. `used_bytes` ($6) selalu 0 sejak akun dibuat.
+
+### Akar masalah
+`cron/quota.sh` membaca stats API Xray yang melaporkan pemakaian per **email**
+(`<nama>-<proto>@tunnel`, contoh `jose-vmess@tunnel`), lalu memakai email itu
+langsung sebagai kunci ke db. Tapi **kolom 1 db adalah nama polos** (`jose`):
+```
+key stats API : jose-vmess@tunnel
+kolom 1 db    : jose
+grep "^jose-vmess@tunnel|" db/vmess.txt  ->  0 baris  (TIDAK cocok)
+```
+Karena `grep -q "^${email}|"` selalu gagal, seluruh blok (`_add_used`, cek kuota,
+kunci) **dilewati** untuk setiap user. Trafik tercatat di stats API tapi tak pernah
+sampai ke db, sehingga kuota tak pernah mencapai batas dan akun tak pernah dikunci.
+
+`limitip_xray.sh` tidak terdampak — dia mengiterasi db dan memakai `$user` (nama)
+untuk db serta email penuh untuk mencocokkan log. `limitip.sh` (SSH/Dropbear) juga
+benar: memakai kolom 1 (`user`) langsung.
+
+### Perbaikan
+Normalisasi email -> nama sebelum menyentuh db:
+```
+key=$(printf '%s' "$email" | sed -E 's/@.*$//; s/-?(vmess|vless|trojan)$//')
+```
+Lalu `$key` dipakai untuk `_add_used`, lookup `$5/$6/$7`, dan `awk` set status
+`locked`. Email penuh tetap dipakai untuk `xray_del_client` karena client di config
+memang memakai email.
+
+### Verifikasi live (injeksi stats API terkontrol)
+```
+kuota 1GB / pemakaian 1.2GB:
+  sebelum fix : status=active, used=0, client tetap 3  (TIDAK terkunci)
+  sesudah fix : status=locked, used=1288490188, client dihapus (3 -> 0)
+                xray -test OK
+di bawah kuota (600MB / 1GB): tetap active
+```
+Akun `jose` dipulihkan (active, 3 transports ws/grpc/hu, `xray -test` OK, service active).
+
 ## v1.13.19 — 2026-11-19 — Audit menu SSH/VMESS/VLESS/TROJAN + guard EOF
 
 Audit fungsional seluruh opsi menu protokol (SSH 13, VMESS 12, VLESS 12, TROJAN 12).
