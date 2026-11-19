@@ -7004,7 +7004,7 @@ After=network.target
 [Service]
 Type=forking
 PIDFile=/run/dropbear.pid
-ExecStart=/usr/sbin/dropbear -p $dport -b /etc/dropbear/banner -P /run/dropbear.pid -K 45
+ExecStart=/usr/sbin/dropbear -p $dport -b /etc/dropbear/banner -P /run/dropbear.pid -K 10
 ExecReload=/bin/kill -HUP \$MAINPID
 [Install]
 WantedBy=multi-user.target
@@ -9089,7 +9089,7 @@ def handle_client(conn, addr):
         for _s in (ssh, conn):
             try:
                 _s.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-                _s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 120)
+                _s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 30)
                 _s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 30)
                 _s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 8)
             except: pass
@@ -15648,7 +15648,7 @@ if [ -z "$_mt_version" ]; then
   _mt_version=$(printf '%s' "${0:-}" | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1)
   [ -n "$_mt_version" ] && case "$_mt_version" in v*) ;; *) _mt_version="v$_mt_version";; esac
 fi
-[ -z "$_mt_version" ] && _mt_version="v1.13.29"
+[ -z "$_mt_version" ] && _mt_version="v1.13.30"
 printf '%s\n' "$_mt_version" > "$ETC/config/version.txt"
 chmod 644 "$ETC/config/version.txt"
 cat > "$ETC/config/repo.txt" << '__EMBED_EOF__'

@@ -1,3 +1,27 @@
+## v1.13.30 — 2026-11-19 — SSH reconnect: keepalive agresif
+
+### Lanjutan v1.13.29
+`-K 45` masih kurang; klien HC menutup sesi karena tak terima traffic kecil.
+
+### Perbaikan
+- Dropbear `-K 45` → `-K 10` (keepalive SSH-level tiap 10s)
+- `mytunnel-sshws.py`: TCP keepalive upstream+klien `KEEPIDLE 120→30`, `KEEPINTVL 30→10`,
+  `KEEPCNT 8→6`. Loop `for _s in (ssh, conn)` sudah menerapkan ke KEDUA socket, jadi
+  hapus blok try/except duplikat yang menyebabkan IndentationError.
+
+### Bukti live
+```
+dropbear-2019 -p 90 -b ... -K 10
+TCP_KEEPIDLE 30 di mytunnel-sshws.py
+dropbear log: sesi tahan 50+ detik (sebelumnya 10-15s), banyak sesi tetap terbuka
+```
+Installer: `bash -n` OK, `.py` blok compile OK.
+
+### Catatan debugging
+Dropbear "Early exit: Terminated by signal" 1× di 15:36:41 = restart service saat
+patch (systemd `Stopping`), BUKAN crash. Host key DSS di-log `Failed loading` = file
+memang tidak ada (hanya rsa+ecdsa), tak berdampak.
+
 ## v1.13.29 — 2026-11-19 — SSH sering reconnect
 
 ### Gejala
