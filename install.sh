@@ -306,17 +306,20 @@ cat > "$ETC/lib/colors.sh" << '__EMBED_EOF__'
 #!/bin/bash
 # shellcheck disable=SC2034
 # mytunnel lib/colors.sh - ANSI colors (60 col)
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-WHITE='\033[1;37m'
-GREY='\033[0;37m'
-RESET='\033[0m'
-BOLD='\033[1m'
-DIM='\033[2m'
+# WAJIB pakai $'...' (bash ANSI-C quoting). Dengan '\033' biasa, isinya backslash
+# LITERAL sehingga warna tidak pernah aktif DAN teks "\033[0;34m" ikut tercetak,
+# merusak lebar kotak menu (60 char jadi 70-105).
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[1;33m'
+BLUE=$'\033[0;34m'
+CYAN=$'\033[0;36m'
+MAGENTA=$'\033[0;35m'
+WHITE=$'\033[1;37m'
+GREY=$'\033[0;37m'
+RESET=$'\033[0m'
+BOLD=$'\033[1m'
+DIM=$'\033[2m'
 
 __EMBED_EOF__
 chmod 644 "$ETC/lib/colors.sh"
@@ -353,6 +356,42 @@ draw_line() {
   local width="${2:-60}"
   printf '%*s\n' "$width" '' | tr ' ' "$char"
 }
+# lebar isi kotak (di antara dua batang │) - SATU sumber kebenaran
+BOX_W=58
+
+# baris dalam kotak, teks di-TENGAH. $1=teks  $2=warna opsional
+_box_center() {
+  local txt="${1:-}" col="${2:-}" len pad_l pad_r
+  len=${#txt}
+  [ "$len" -gt "$BOX_W" ] && { txt="${txt:0:$BOX_W}"; len=$BOX_W; }
+  pad_l=$(( (BOX_W - len) / 2 ))
+  pad_r=$(( BOX_W - len - pad_l ))
+  printf "%s│${RESET}%*s${col}%s${RESET}%*s%s│${RESET}\n" \
+    "$BLUE" "$pad_l" "" "$txt" "$pad_r" "" "$BLUE"
+}
+
+# baris dalam kotak, "label : nilai" rata kiri (label lebar tetap -> titik dua sejajar)
+_box_row() {
+  # label 11 (muat "Client Name"), value 42 -> total isi = 1+11+3+42+1 = 58
+  local label="${1:-}" value="${2:-}"
+  [ "${#value}" -gt 42 ] && value="${value:0:42}"
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-42s %s│${RESET}\n" \
+    "$BLUE" "$label" "$value" "$BLUE"
+}
+
+_box_top()    { printf "%s┌──────────────────────────────────────────────────────────┐${RESET}\n" "$BLUE"; }
+_box_mid()    { printf "%s├──────────────────────────────────────────────────────────┤${RESET}\n" "$BLUE"; }
+_box_bottom() { printf "%s└──────────────────────────────────────────────────────────┘${RESET}\n" "$BLUE"; }
+
+# cetak teks di TENGAH kotak 60 kolom (di antara dua │). $1=teks $2=warna
+center_in_box() {
+  local txt="${1:-}" col="${2:-${BOLD}}" inner=58 len pad_l pad_r
+  len=${#txt}
+  [ "$len" -gt "$inner" ] && { txt="${txt:0:$inner}"; len=$inner; }
+  pad_l=$(( (inner - len) / 2 )); pad_r=$(( inner - len - pad_l ))
+  printf "${BLUE}│${RESET}%*s${col}%s${RESET}%*s${BLUE}│${RESET}\n" "$pad_l" "" "$txt" "$pad_r" ""
+}
+
 draw_box() {
   local title="$1"
   local width="${2:-60}"
@@ -532,8 +571,8 @@ XRAY_CFG="$XRAY_ETC/config.json"
 LOG="${MYTUNNEL_PREFIX:-}/var/log/mytunnel.log"
 [ -z "${MYTUNNEL_PREFIX:-}" ] && LOG="/var/log/mytunnel.log"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
 
 _xray_cfg() { echo "$XRAY_CFG"; }
 _xray_bin() {
@@ -863,9 +902,9 @@ LOG="${MYTUNNEL_PREFIX:-}/var/log/mytunnel.log"
 [ -z "${MYTUNNEL_PREFIX:-}" ] && LOG="/var/log/mytunnel.log"
 # DOMAIN_FILE="$ETC/config/domain.txt"  # unused - _get_domain() uses cat directly
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 
 # System users that must never be created/overwritten
 _SYS_DENY="root daemon bin sys sync games man lp mail news uucp proxy www-data backup list irc gnats nobody systemd-network systemd-resolve systemd-timesync messagebus syslog apt tss uuidd tcpdump avahi-autoipd usbmux dnsmasq rtkit cups-pkgslp saned sshd pollinate hermes"
@@ -1344,9 +1383,9 @@ XRAY_CFG="$XRAY_ETC/config.json"
 LOG="${MYTUNNEL_PREFIX:-}/var/log/mytunnel.log"
 [ -z "${MYTUNNEL_PREFIX:-}" ] && LOG="/var/log/mytunnel.log"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/xray_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 
 _SYS_DENY="root daemon bin sys sync games man lp mail news uucp proxy www-data backup list irc gnats nobody systemd-network systemd-resolve systemd-timesync messagebus syslog apt tss uuidd tcpdump avahi-autoipd usbmux dnsmasq rtkit cups-pkgslp saned sshd pollinate hermes"
 
@@ -1880,9 +1919,9 @@ fi
 if [ -n "${MYTUNNEL_PREFIX:-}" ]; then LOG="$MYTUNNEL_PREFIX/var/log/mytunnel.log"; else LOG="/var/log/mytunnel.log"; fi
 # REAL_CRON_DIR removed (was unused) - cron dir is /etc/cron.d fixed
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/sysinfo.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 
 fh_log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG" 2>/dev/null || true; }
 
@@ -2153,9 +2192,9 @@ fi
 if [ -n "${MYTUNNEL_PREFIX:-}" ]; then LOG="$MYTUNNEL_PREFIX/var/log/mytunnel.log"; XRAY_ETC="$MYTUNNEL_PREFIX/usr/local/etc/xray"; else LOG="/var/log/mytunnel.log"; XRAY_ETC="/usr/local/etc/xray"; fi
 XRAY_CFG="$XRAY_ETC/config.json"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/sysinfo.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 
 ah_log(){ echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG" 2>/dev/null || true; }
 ah_mask_token(){
@@ -2306,26 +2345,22 @@ else
   [ -f /etc/mytunnel/lib/brand_guard.sh ] && . /etc/mytunnel/lib/brand_guard.sh 2>/dev/null || true
   command -v bg_set_brand >/dev/null 2>&1 || bg_set_brand() { bg_set "$@"; }
 fi
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"
-YELLOW="${YELLOW:-\033[1;33m}"; CYAN="${CYAN:-\033[0;36m}"
-BLUE="${BLUE:-\033[0;34m}"; GREY="${GREY:-\033[0;37m}"
-RESET="${RESET:-\033[0m}"; BOLD="${BOLD:-\033[1m}"
-DIM="${DIM:-\033[2m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"
+YELLOW="${YELLOW:-$'\033[1;33m'}"; CYAN="${CYAN:-$'\033[0;36m'}"
+BLUE="${BLUE:-$'\033[0;34m'}"; GREY="${GREY:-$'\033[0;37m'}"
+RESET="${RESET:-$'\033[0m'}"; BOLD="${BOLD:-$'\033[1m'}"
+DIM="${DIM:-$'\033[2m'}"
 
 show_header() {
   local brand
+  # get_brand butuh ETC_BASE; tanpa ini judul kotak kosong
+  ETC_BASE="${ETC_BASE:-$BASE}"
   brand=$(get_brand 2>/dev/null || echo "SUNEK VPN")
-  clear 2>/dev/null || printf '\033c'
-  if declare -f draw_box >/dev/null 2>&1; then
-    draw_box "$brand" 60
-  else
-    local inner=58 len=${#brand} left right
-    [ "$len" -gt 58 ] && brand="${brand:0:58}" && len=58
-    left=$(( (inner - len) / 2 )); right=$(( inner - len - left ))
-    echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    printf "${BLUE}│${RESET}%*s${BOLD}%s${RESET}%*s${BLUE}│${RESET}\n" "$left" "" "$brand" "$right" ""
-    echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
-  fi
+  [ -z "$brand" ] && brand="SUNEK VPN"
+  clear 2>/dev/null || true
+  _box_top
+  _box_center "$brand" "$BOLD"
+  _box_bottom
 }
 
 show_sysinfo() {
@@ -2345,30 +2380,29 @@ show_sysinfo() {
   [ -z "$d_rx" ] && d_rx="-"; [ -z "$d_tx" ] && d_tx="-"
   month_val=$(get_traffic_month 2>/dev/null || echo "-")
   day_val=$(get_traffic_day 2>/dev/null || echo "-")
-  echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${CYAN}%-10s${RESET}: %-44s ${BLUE}│${RESET}\n" "OS" "$os"
-  printf "${BLUE}│${RESET} ${CYAN}%-10s${RESET}: %-10s ${CYAN}%-6s${RESET}: %-25s ${BLUE}│${RESET}\n" "RAM" "$ram" "SWAP" "$swap"
-  printf "${BLUE}│${RESET} ${CYAN}%-10s${RESET}: %-44s ${BLUE}│${RESET}\n" "CITY" "$city"
-  printf "${BLUE}│${RESET} ${CYAN}%-10s${RESET}: %-44s ${BLUE}│${RESET}\n" "ISP" "$isp"
-  printf "${BLUE}│${RESET} ${CYAN}%-10s${RESET}: %-44s ${BLUE}│${RESET}\n" "IP" "$ip"
-  printf "${BLUE}│${RESET} ${CYAN}%-10s${RESET}: %-44s ${BLUE}│${RESET}\n" "DOMAIN" "$domain"
-  printf "${BLUE}│${RESET} ${CYAN}%-10s${RESET}: %-44s ${BLUE}│${RESET}\n" "UPTIME" "$uptime"
-  echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
-  # trafik - format daftar, sama dengan dashboard login
-  local _sep _mtag _dtag _dn
-  _sep="- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"
-  printf "${DIM}%s${RESET}\n" "$_sep"
-  _mtag=""; _mn=$(date +%B 2>/dev/null || echo ""); [ -n "$_mn" ] && _mtag="[${_mn}]"
-  printf "${GREEN}%-10s${RESET} : %-18s %-14s\n" "MONTH" "$month_val" "$_mtag"
-  printf "${GREEN}%-10s${RESET} : %s\n" "RX" "$m_rx"
-  printf "${GREEN}%-10s${RESET} : %s\n" "TX" "$m_tx"
-  printf "${DIM}%s${RESET}\n" "$_sep"
-  _dtag=""; _dn=$(date +%A 2>/dev/null || echo ""); [ -n "$_dn" ] && _dtag="[${_dn}]"
-  printf "${GREEN}%-10s${RESET} : %-18s %-14s\n" "DAY" "$day_val" "$_dtag"
-  printf "${GREEN}%-10s${RESET} : %s\n" "RX" "$d_rx"
-  printf "${GREEN}%-10s${RESET} : %s\n" "TX" "$d_tx"
-  printf "${GREEN}%-10s${RESET} : %s\n" "TRAFFIC" "$(get_live_speed 2>/dev/null || echo '-')"
-  echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
+  _box_top
+  _box_row "OS"      "$os"
+  _box_row "RAM"     "$ram"
+  _box_row "SWAP"    "$swap"
+  _box_row "CITY"    "$city"
+  _box_row "ISP"     "$isp"
+  _box_row "IP"      "$ip"
+  _box_row "DOMAIN"  "$domain"
+  _box_row "UPTIME"  "$uptime"
+  _box_mid
+  # traffic: tag bulan/hari di kanan, semua tetap DI DALAM kotak
+  local _mtag _dtag
+  _mtag=$(date +%B 2>/dev/null || echo ""); [ -n "$_mtag" ] && _mtag="[${_mtag}]"
+  _dtag=$(date +%A 2>/dev/null || echo ""); [ -n "$_dtag" ] && _dtag="[${_dtag}]"
+  _box_row "MONTH"   "$(printf '%s  %s' "$month_val" "$_mtag")"
+  _box_row "RX"      "$m_rx"
+  _box_row "TX"      "$m_tx"
+  _box_mid
+  _box_row "DAY"     "$(printf '%s  %s' "$day_val" "$_dtag")"
+  _box_row "RX"      "$d_rx"
+  _box_row "TX"      "$d_tx"
+  _box_row "TRAFFIC" "$(get_live_speed 2>/dev/null || echo '-')"
+  _box_bottom
 }
 
 show_status() {
@@ -2381,7 +2415,18 @@ show_status() {
   [ "$xray" = "ON" ] && xcol="$GREEN" || xcol="$RED"
   [ "$sshws" = "ON" ] && scol="$GREEN" || scol="$RED"
   [ "$nginx" = "ON" ] && ncol="$GREEN" || ncol="$RED"
-  echo -e "${xcol}XRAY : $xray${RESET} | ${scol}SSH-WS : $sshws${RESET} | ${ncol}LOADBLC : $nginx${RESET} | GOOD"
+  # status dulu dicetak liar di luar kotak; sekarang jadi baris kotak tersendiri
+  # tiga status dalam satu baris kotak. Hitung padding supaya isi TEPAT 58 char,
+  # supaya tidak bergantung pada dugaan jumlah spasi manual.
+  _box_top
+  local _s _pad
+  _s=$(printf "XRAY %-4s  SSH %-4s  WEB %-4s" "$xray" "$sshws" "$nginx")
+  # center blok status di dalam kotak
+  _pad=$(( (BOX_W - ${#_s}) / 2 )); [ "$_pad" -lt 0 ] && _pad=0
+  local _rpad=$(( BOX_W - ${#_s} - _pad )); [ "$_rpad" -lt 0 ] && _rpad=0
+  printf "%s│${RESET}%*s%sXRAY${RESET} %-4s  %sSSH${RESET} %-4s  %sWEB${RESET} %-4s%*s%s│${RESET}\n" \
+    "$BLUE" "$_pad" "" "$xcol" "$xray" "$scol" "$sshws" "$ncol" "$nginx" "$_rpad" "" "$BLUE"
+  _box_bottom
 }
 
 show_version() {
@@ -2390,22 +2435,30 @@ show_version() {
   version="SUNEK-VPN $version"
   client=$(get_ip_cached 2>/dev/null || echo "-")
   expiry=$(get_expiry 2>/dev/null || echo "-")
-  echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} %-12s : %-41s ${BLUE}│${RESET}\n" "Version" "$version"
-  printf "${BLUE}│${RESET} %-12s : %-41s ${BLUE}│${RESET}\n" "Client Name" "$client"
-  printf "${BLUE}│${RESET} %-12s : %-41s ${BLUE}│${RESET}\n" "Expiry In" "$expiry"
-  echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
+  _box_top
+  _box_row "Version"     "$version"
+  _box_row "Client Name" "$client"
+  _box_row "Expiry In"   "$expiry"
+  _box_bottom
+}
+
+# baris menu dua kolom: kiri 26 karakter, kanan sisanya -> selalu sejajar
+_box_menu2() {
+  local l="${1:-}" r="${2:-}" line
+  # isi = 1 spasi + 57 char + 0 = 58 -> total baris 60
+  line=$(printf '%-25s%s' " $l" "${r:+  $r}")
+  printf "%s│${RESET}${BOLD}%-58s${RESET}%s│${RESET}\n" "$BLUE" "$line" "$BLUE"
 }
 
 show_menu() {
-  echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" " 1.) SSH                 6.) FEATURES"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" " 2.) VMESS               7.) SET REDUCE/TIME"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" " 3.) VLESS               8.) SET BRAND NAME"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" " 4.) TROJAN              9.) CHECK SERVICES"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" " 5.) SETUP BOT             x.) EXIT"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "10.) LOGIN REPORT"
-  echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
+  _box_top
+  _box_menu2 "1.) SSH"            "6.) FEATURES"
+  _box_menu2 "2.) VMESS"          "7.) SET REDUCE/TIME"
+  _box_menu2 "3.) VLESS"          "8.) SET BRAND NAME"
+  _box_menu2 "4.) TROJAN"         "9.) CHECK SERVICES"
+  _box_menu2 "5.) SETUP BOT"      "x.) EXIT"
+  _box_menu2 "10.) LOGIN REPORT"  ""
+  _box_bottom
 }
 
 set_brand_name() {
@@ -2491,9 +2544,9 @@ cat > "$ETC/menu/ssh.sh" << '__EMBED_EOF__'
 MYTUNNEL_PREFIX="${MYTUNNEL_PREFIX:-}"
 if [ -n "$MYTUNNEL_PREFIX" ]; then BASE="$MYTUNNEL_PREFIX/etc/mytunnel"; else BASE="/etc/mytunnel"; fi
 for f in "$BASE/lib/colors.sh" "$BASE/lib/helpers.sh" "$BASE/lib/sysinfo.sh" "$BASE/lib/ssh_helpers.sh" "$BASE/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-BLUE="${BLUE:-\033[0;34m}"; CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+BLUE="${BLUE:-$'\033[0;34m'}"; CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 DB="$BASE/db/ssh.txt"
 LOG="${MYTUNNEL_PREFIX:-}/var/log/mytunnel.log"
 [ -n "$MYTUNNEL_PREFIX" ] && LOG="$MYTUNNEL_PREFIX/var/log/mytunnel.log"
@@ -2523,7 +2576,7 @@ _list_users_raw() { _ensure_db; grep -v '^\s*$' "$DB" 2>/dev/null | grep -v '^#'
 _show_user_list_numbered() {
   local i=1
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Daftar User SSH"
+  center_in_box "Daftar User SSH"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   if [ ! -s "$DB" ]; then
     printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "(belum ada user)"
@@ -2546,7 +2599,7 @@ _pick_user_by_number() {
 }
 
 do_create() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local brand
   brand=$(cat "$BASE/config/brand.txt" 2>/dev/null | head -1 | tr -d '\n')
   [ -z "$brand" ] && brand="SUNEK VPN"
@@ -2554,7 +2607,7 @@ do_create() {
     draw_box "$brand" 60
   else
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "$brand"
+    center_in_box "$brand"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   fi
   echo -e "${GREY}Just input a number for Limit IP${RESET}"
@@ -2623,9 +2676,9 @@ _parse_duration_to_min() {
   else [[ "$v" =~ ^[0-9]+$ ]] || v="$def"; echo "$v"; fi
 }
 do_trial() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Trial SSH"
+  center_in_box "Trial SSH"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   local inp_dur inp_limit trial_min trial_limit days
   echo -ne "${CYAN}Durasi trial [60m, contoh 30m/2h, default 60m]: ${RESET}"; read -r inp_dur
@@ -2777,9 +2830,9 @@ do_unlock() {
 }
 
 do_check_config() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Check Config SSH"
+  center_in_box "Check Config SSH"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   _show_user_list_numbered
   [ ! -s "$DB" ] && { echo -ne "${GREY}Enter...${RESET}"; read -r _; return 0; }
@@ -2793,7 +2846,7 @@ do_check_config() {
   _pass=$(ssh_get_field "$user" 2 2>/dev/null || echo "-")
   _exp=$(ssh_get_field "$user" 3 2>/dev/null || echo "-")
   _lim=$(ssh_get_field "$user" 4 2>/dev/null || echo "0")
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local _out
   _out=$(print_ssh_account_info "$user" "$_pass" "$_exp" "$_lim" 2>&1) || _out="Gagal tampil $user"
   echo "$_out"
@@ -2806,9 +2859,9 @@ do_check_config() {
 }
 
 do_recovery() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Recovery SSH (Expired)"
+  center_in_box "Recovery SSH (Expired)"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   local exp_db="$BASE/db/ssh_expired.txt"
   if [ ! -f "$exp_db" ] || [ ! -s "$exp_db" ]; then
@@ -2925,13 +2978,13 @@ do_edit_limit_all() {
 }
 
 do_check_login() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local brand
   brand=$(cat "$BASE/config/brand.txt" 2>/dev/null | head -1 | tr -d '\n')
   [ -z "$brand" ] && brand="SUNEK VPN"
-  if declare -f draw_box >/dev/null 2>&1; then draw_box "$brand" 60; else echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"; printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "$brand"; echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"; fi
+  if declare -f draw_box >/dev/null 2>&1; then draw_box "$brand" 60; else echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"; center_in_box "$brand"; echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"; fi
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "SSH/DropBear User Login"
+  center_in_box "SSH/DropBear User Login"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   printf "${BLUE}│${RESET} ${BOLD}%-20s %-15s %-15s${RESET} ${BLUE}│${RESET}\n" "Username" "Usage" "Total"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
@@ -2967,7 +3020,7 @@ do_check_login() {
 }
 
 do_list() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   _show_user_list_numbered
   echo ""
   echo -ne "${GREY}Press Enter for Back to Manage${RESET}"; read -r _
@@ -2975,9 +3028,9 @@ do_list() {
 
 
 while true; do
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "SSH-Dropbear-OpenVPN"
+  center_in_box "SSH-Dropbear-OpenVPN"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Create"
@@ -2988,11 +3041,11 @@ while true; do
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "6.) Check Users Login"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "7.) List Users"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" ""
-  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "LOCK & UNLOCK"
+  center_in_box "LOCK & UNLOCK"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "8.) Lock"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "9.) Unlock"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" ""
-  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "UTILITIES"
+  center_in_box "UTILITIES"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "10.) Check Config"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "11.) Recovery"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "12.) Edit Limit IP"
@@ -3030,9 +3083,9 @@ cat > "$ETC/menu/vmess.sh" << '__EMBED_EOF__'
 MYTUNNEL_PREFIX="${MYTUNNEL_PREFIX:-}"
 if [ -n "$MYTUNNEL_PREFIX" ]; then BASE="$MYTUNNEL_PREFIX/etc/mytunnel"; else BASE="/etc/mytunnel"; fi
 for f in "$BASE/lib/colors.sh" "$BASE/lib/helpers.sh" "$BASE/lib/sysinfo.sh" "$BASE/lib/xray_helpers.sh" "$BASE/lib/proto_helpers.sh" "$BASE/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-BLUE="${BLUE:-\033[0;34m}"; CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+BLUE="${BLUE:-$'\033[0;34m'}"; CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 PROTO="vmess"
 DB="$BASE/db/vmess.txt"
 LOG="${MYTUNNEL_PREFIX:-}/var/log/mytunnel.log"
@@ -3062,7 +3115,7 @@ _list_users_raw() { _ensure_db; grep -v '^\s*$' "$DB" 2>/dev/null | grep -v '^#'
 _show_user_list_numbered() {
   local i=1
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Daftar User VMESS"
+  center_in_box "Daftar User VMESS"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   if [ ! -s "$DB" ]; then
     printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "(belum ada user)"
@@ -3085,7 +3138,7 @@ _pick_user_by_number() {
 }
 
 do_create() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local brand
   brand=$(cat "$BASE/config/brand.txt" 2>/dev/null | head -1 | tr -d '\n')
   [ -z "$brand" ] && brand="SUNEK VPN"
@@ -3094,10 +3147,10 @@ do_create() {
     draw_box "VMESS" 60
   else
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "$brand"
+    center_in_box "$brand"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "VMESS"
+    center_in_box "VMESS"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   fi
   echo -e "${GREY}Don't use special characters and uppercase!${RESET}"
@@ -3159,7 +3212,7 @@ do_create() {
 }
 
 do_create_custom() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local brand
   brand=$(cat "$BASE/config/brand.txt" 2>/dev/null | head -1 | tr -d '\n')
   [ -z "$brand" ] && brand="SUNEK VPN"
@@ -3229,9 +3282,9 @@ _parse_duration_to_min() {
   else [[ "$v" =~ ^[0-9]+$ ]] || v="$def"; echo "$v"; fi
 }
 do_trial() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Trial VMESS"
+  center_in_box "Trial VMESS"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   local inp_dur inp_limit inp_quota trial_min trial_limit trial_quota days
   echo -ne "${CYAN}Durasi trial [60m, contoh 30m/2h, default 60m]: ${RESET}"; read -r inp_dur
@@ -3347,12 +3400,12 @@ _xray_online_ips() {
   tail -n 5000 "$_log" 2>/dev/null | grep -F "email: $_u" 2>/dev/null | grep -oE 'from [0-9]{1,3}(\.[0-9]{1,3}){3}' 2>/dev/null | awk '{print $2}' 2>/dev/null | sort -u 2>/dev/null | tr '\n' ' ' 2>/dev/null | head -c 28
 }
 do_list() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "List Users VMESS"
+  center_in_box "List Users VMESS"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   printf -v _inner "%2s %-10s %-10s %3s %3s %3s %3s %-6s" "No" "User" "Expiry" "Sisa" "Lim" "Q" "On" "Status"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "$_inner"
+  center_in_box "$_inner"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   if [ ! -s "$DB" ]; then
     printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "(kosong)"
@@ -3378,7 +3431,7 @@ do_list() {
   local _u
   _u=$(_pick_user_by_number "$num")
   [ -z "$_u" ] && { echo -e "${RED}Nomor tidak ada${RESET}"; echo -ne "${GREY}Enter...${RESET}"; read -r _; return 0; }
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local _ips; _ips=$(_xray_online_ips "$_u" 2>/dev/null)
   [ -n "$_ips" ] && echo -e "${CYAN}IP login: ${RESET}$_ips"
   print_proto_account_info "$PROTO" "$_u" 2>/dev/null || gen_links "$PROTO" "$_u" 2>/dev/null || echo "User tidak ada"
@@ -3412,9 +3465,9 @@ do_unlock() {
 }
 
 do_check_config() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   printf "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}\n"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Check Config VMESS (pilih akun)"
+  center_in_box "Check Config VMESS (pilih akun)"
   printf "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}\n"
   _show_user_list_numbered
   [ ! -s "$DB" ] && { echo -ne "${GREY}Enter...${RESET}"; read -r _; return 0; }
@@ -3424,7 +3477,7 @@ do_check_config() {
   [ "$num" -eq 0 ] && return 0
   local user; user=$(_pick_user_by_number "$num")
   [ -z "$user" ] && { echo -e "${RED}Nomor tidak ada${RESET}"; echo -ne "${GREY}Enter...${RESET}"; read -r _; return 0; }
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local _out
   _out=$(print_proto_account_info "$PROTO" "$user" 2>&1) || _out=$(gen_links "$PROTO" "$user" 2>&1) || _out="Gagal tampil $user"
   echo "$_out"
@@ -3437,9 +3490,9 @@ do_check_config() {
 }
 
 do_recovery() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   printf "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}\n"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Recovery VMESS (Expired)"
+  center_in_box "Recovery VMESS (Expired)"
   printf "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}\n"
   local exp_db="$BASE/db/${PROTO}_expired.txt"
   if [ ! -f "$exp_db" ] || [ ! -s "$exp_db" ]; then
@@ -3505,13 +3558,13 @@ do_recovery() {
 }
 
 do_check_login() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local brand
   brand=$(cat "$BASE/config/brand.txt" 2>/dev/null | head -1 | tr -d '\n')
   [ -z "$brand" ] && brand="SUNEK VPN"
-  if declare -f draw_box >/dev/null 2>&1; then draw_box "$brand" 60; else echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"; printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "$brand"; echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"; fi
+  if declare -f draw_box >/dev/null 2>&1; then draw_box "$brand" 60; else echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"; center_in_box "$brand"; echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"; fi
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "VMESS User Login"
+  center_in_box "VMESS User Login"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   printf "${BLUE}│${RESET} ${BOLD}%-16s %-12s %-7s %-7s %-8s${RESET} ${BLUE}│${RESET}\n" "Username" "Usage" "Total" "Online" "Log"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
@@ -3547,9 +3600,9 @@ do_check_login() {
 
 
 while true; do
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "VMESS"
+  center_in_box "VMESS"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Create"
@@ -3561,11 +3614,11 @@ while true; do
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "7.) Check Users Login"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "8.) List Users"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" ""
-  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "LOCK & UNLOCK"
+  center_in_box "LOCK & UNLOCK"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "9.) Lock"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "10.) Unlock"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" ""
-  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "UTILITIES"
+  center_in_box "UTILITIES"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "11.) Check Config"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "12.) Recovery"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "13.) Back to Menu"
@@ -3600,9 +3653,9 @@ cat > "$ETC/menu/vless.sh" << '__EMBED_EOF__'
 MYTUNNEL_PREFIX="${MYTUNNEL_PREFIX:-}"
 if [ -n "$MYTUNNEL_PREFIX" ]; then BASE="$MYTUNNEL_PREFIX/etc/mytunnel"; else BASE="/etc/mytunnel"; fi
 for f in "$BASE/lib/colors.sh" "$BASE/lib/helpers.sh" "$BASE/lib/sysinfo.sh" "$BASE/lib/xray_helpers.sh" "$BASE/lib/proto_helpers.sh" "$BASE/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-BLUE="${BLUE:-\033[0;34m}"; CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+BLUE="${BLUE:-$'\033[0;34m'}"; CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 PROTO="vless"
 DB="$BASE/db/vless.txt"
 LOG="${MYTUNNEL_PREFIX:-}/var/log/mytunnel.log"
@@ -3632,7 +3685,7 @@ _list_users_raw() { _ensure_db; grep -v '^\s*$' "$DB" 2>/dev/null | grep -v '^#'
 _show_user_list_numbered() {
   local i=1
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Daftar User VLESS"
+  center_in_box "Daftar User VLESS"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   if [ ! -s "$DB" ]; then
     printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "(belum ada user)"
@@ -3655,7 +3708,7 @@ _pick_user_by_number() {
 }
 
 do_create() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local brand
   brand=$(cat "$BASE/config/brand.txt" 2>/dev/null | head -1 | tr -d '\n')
   [ -z "$brand" ] && brand="SUNEK VPN"
@@ -3664,10 +3717,10 @@ do_create() {
     draw_box "VLESS" 60
   else
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "$brand"
+    center_in_box "$brand"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "VLESS"
+    center_in_box "VLESS"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   fi
   echo -e "${GREY}Don't use special characters and uppercase!${RESET}"
@@ -3729,7 +3782,7 @@ do_create() {
 }
 
 do_create_custom() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local brand
   brand=$(cat "$BASE/config/brand.txt" 2>/dev/null | head -1 | tr -d '\n')
   [ -z "$brand" ] && brand="SUNEK VPN"
@@ -3799,9 +3852,9 @@ _parse_duration_to_min() {
   else [[ "$v" =~ ^[0-9]+$ ]] || v="$def"; echo "$v"; fi
 }
 do_trial() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Trial VLESS"
+  center_in_box "Trial VLESS"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   local inp_dur inp_limit inp_quota trial_min trial_limit trial_quota days
   echo -ne "${CYAN}Durasi trial [60m, contoh 30m/2h, default 60m]: ${RESET}"; read -r inp_dur
@@ -3917,12 +3970,12 @@ _xray_online_ips() {
   tail -n 5000 "$_log" 2>/dev/null | grep -F "email: $_u" 2>/dev/null | grep -oE 'from [0-9]{1,3}(\.[0-9]{1,3}){3}' 2>/dev/null | awk '{print $2}' 2>/dev/null | sort -u 2>/dev/null | tr '\n' ' ' 2>/dev/null | head -c 28
 }
 do_list() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "List Users VLESS"
+  center_in_box "List Users VLESS"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   printf -v _inner "%2s %-10s %-10s %3s %3s %3s %3s %-6s" "No" "User" "Expiry" "Sisa" "Lim" "Q" "On" "Status"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "$_inner"
+  center_in_box "$_inner"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   if [ ! -s "$DB" ]; then
     printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "(kosong)"
@@ -3948,7 +4001,7 @@ do_list() {
   local _u
   _u=$(_pick_user_by_number "$num")
   [ -z "$_u" ] && { echo -e "${RED}Nomor tidak ada${RESET}"; echo -ne "${GREY}Enter...${RESET}"; read -r _; return 0; }
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local _ips; _ips=$(_xray_online_ips "$_u" 2>/dev/null)
   [ -n "$_ips" ] && echo -e "${CYAN}IP login: ${RESET}$_ips"
   print_proto_account_info "$PROTO" "$_u" 2>/dev/null || gen_links "$PROTO" "$_u" 2>/dev/null || echo "User tidak ada"
@@ -3982,9 +4035,9 @@ do_unlock() {
 }
 
 do_check_config() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   printf "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}\n"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Check Config VLESS (pilih akun)"
+  center_in_box "Check Config VLESS (pilih akun)"
   printf "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}\n"
   _show_user_list_numbered
   [ ! -s "$DB" ] && { echo -ne "${GREY}Enter...${RESET}"; read -r _; return 0; }
@@ -3994,7 +4047,7 @@ do_check_config() {
   [ "$num" -eq 0 ] && return 0
   local user; user=$(_pick_user_by_number "$num")
   [ -z "$user" ] && { echo -e "${RED}Nomor tidak ada${RESET}"; echo -ne "${GREY}Enter...${RESET}"; read -r _; return 0; }
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local _out
   _out=$(print_proto_account_info "$PROTO" "$user" 2>&1) || _out=$(gen_links "$PROTO" "$user" 2>&1) || _out="Gagal tampil $user"
   echo "$_out"
@@ -4007,9 +4060,9 @@ do_check_config() {
 }
 
 do_recovery() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   printf "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}\n"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Recovery VLESS (Expired)"
+  center_in_box "Recovery VLESS (Expired)"
   printf "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}\n"
   local exp_db="$BASE/db/${PROTO}_expired.txt"
   if [ ! -f "$exp_db" ] || [ ! -s "$exp_db" ]; then
@@ -4075,13 +4128,13 @@ do_recovery() {
 }
 
 do_check_login() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local brand
   brand=$(cat "$BASE/config/brand.txt" 2>/dev/null | head -1 | tr -d '\n')
   [ -z "$brand" ] && brand="SUNEK VPN"
-  if declare -f draw_box >/dev/null 2>&1; then draw_box "$brand" 60; else echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"; printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "$brand"; echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"; fi
+  if declare -f draw_box >/dev/null 2>&1; then draw_box "$brand" 60; else echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"; center_in_box "$brand"; echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"; fi
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "VLESS User Login"
+  center_in_box "VLESS User Login"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   printf "${BLUE}│${RESET} ${BOLD}%-16s %-12s %-7s %-7s %-8s${RESET} ${BLUE}│${RESET}\n" "Username" "Usage" "Total" "Online" "Log"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
@@ -4117,9 +4170,9 @@ do_check_login() {
 
 
 while true; do
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "VLESS"
+  center_in_box "VLESS"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Create"
@@ -4131,11 +4184,11 @@ while true; do
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "7.) Check Users Login"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "8.) List Users"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" ""
-  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "LOCK & UNLOCK"
+  center_in_box "LOCK & UNLOCK"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "9.) Lock"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "10.) Unlock"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" ""
-  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "UTILITIES"
+  center_in_box "UTILITIES"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "11.) Check Config"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "12.) Recovery"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "13.) Back to Menu"
@@ -4170,9 +4223,9 @@ cat > "$ETC/menu/trojan.sh" << '__EMBED_EOF__'
 MYTUNNEL_PREFIX="${MYTUNNEL_PREFIX:-}"
 if [ -n "$MYTUNNEL_PREFIX" ]; then BASE="$MYTUNNEL_PREFIX/etc/mytunnel"; else BASE="/etc/mytunnel"; fi
 for f in "$BASE/lib/colors.sh" "$BASE/lib/helpers.sh" "$BASE/lib/sysinfo.sh" "$BASE/lib/xray_helpers.sh" "$BASE/lib/proto_helpers.sh" "$BASE/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-BLUE="${BLUE:-\033[0;34m}"; CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+BLUE="${BLUE:-$'\033[0;34m'}"; CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 PROTO="trojan"
 DB="$BASE/db/trojan.txt"
 LOG="${MYTUNNEL_PREFIX:-}/var/log/mytunnel.log"
@@ -4202,7 +4255,7 @@ _list_users_raw() { _ensure_db; grep -v '^\s*$' "$DB" 2>/dev/null | grep -v '^#'
 _show_user_list_numbered() {
   local i=1
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Daftar User TROJAN"
+  center_in_box "Daftar User TROJAN"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   if [ ! -s "$DB" ]; then
     printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "(belum ada user)"
@@ -4225,7 +4278,7 @@ _pick_user_by_number() {
 }
 
 do_create() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local brand
   brand=$(cat "$BASE/config/brand.txt" 2>/dev/null | head -1 | tr -d '\n')
   [ -z "$brand" ] && brand="SUNEK VPN"
@@ -4234,10 +4287,10 @@ do_create() {
     draw_box "TROJAN" 60
   else
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "$brand"
+    center_in_box "$brand"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "TROJAN"
+    center_in_box "TROJAN"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   fi
   echo -e "${GREY}Don't use special characters and uppercase!${RESET}"
@@ -4299,7 +4352,7 @@ do_create() {
 }
 
 do_create_custom() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local brand
   brand=$(cat "$BASE/config/brand.txt" 2>/dev/null | head -1 | tr -d '\n')
   [ -z "$brand" ] && brand="SUNEK VPN"
@@ -4369,9 +4422,9 @@ _parse_duration_to_min() {
   else [[ "$v" =~ ^[0-9]+$ ]] || v="$def"; echo "$v"; fi
 }
 do_trial() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Trial TROJAN"
+  center_in_box "Trial TROJAN"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   local inp_dur inp_limit inp_quota trial_min trial_limit trial_quota days
   echo -ne "${CYAN}Durasi trial [60m, contoh 30m/2h, default 60m]: ${RESET}"; read -r inp_dur
@@ -4486,12 +4539,12 @@ _xray_online_ips() {
   tail -n 5000 "$_log" 2>/dev/null | grep -F "email: $_u" 2>/dev/null | grep -oE 'from [0-9]{1,3}(\.[0-9]{1,3}){3}' 2>/dev/null | awk '{print $2}' 2>/dev/null | sort -u 2>/dev/null | tr '\n' ' ' 2>/dev/null | head -c 28
 }
 do_list() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "List Users TROJAN"
+  center_in_box "List Users TROJAN"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   printf -v _inner "%2s %-10s %-10s %3s %3s %3s %3s %-6s" "No" "User" "Expiry" "Sisa" "Lim" "Q" "On" "Status"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "$_inner"
+  center_in_box "$_inner"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   if [ ! -s "$DB" ]; then
     printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "(kosong)"
@@ -4517,7 +4570,7 @@ do_list() {
   local _u
   _u=$(_pick_user_by_number "$num")
   [ -z "$_u" ] && { echo -e "${RED}Nomor tidak ada${RESET}"; echo -ne "${GREY}Enter...${RESET}"; read -r _; return 0; }
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local _ips; _ips=$(_xray_online_ips "$_u" 2>/dev/null)
   [ -n "$_ips" ] && echo -e "${CYAN}IP login: ${RESET}$_ips"
   print_proto_account_info "$PROTO" "$_u" 2>/dev/null || gen_links "$PROTO" "$_u" 2>/dev/null || echo "User tidak ada"
@@ -4551,9 +4604,9 @@ do_unlock() {
 }
 
 do_check_config() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   printf "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}\n"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Check Config TROJAN (pilih akun)"
+  center_in_box "Check Config TROJAN (pilih akun)"
   printf "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}\n"
   _show_user_list_numbered
   [ ! -s "$DB" ] && { echo -ne "${GREY}Enter...${RESET}"; read -r _; return 0; }
@@ -4563,7 +4616,7 @@ do_check_config() {
   [ "$num" -eq 0 ] && return 0
   local user; user=$(_pick_user_by_number "$num")
   [ -z "$user" ] && { echo -e "${RED}Nomor tidak ada${RESET}"; echo -ne "${GREY}Enter...${RESET}"; read -r _; return 0; }
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local _out
   _out=$(print_proto_account_info "$PROTO" "$user" 2>&1) || _out=$(gen_links "$PROTO" "$user" 2>&1) || _out="Gagal tampil $user"
   echo "$_out"
@@ -4576,9 +4629,9 @@ do_check_config() {
 }
 
 do_recovery() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   printf "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}\n"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Recovery TROJAN (Expired)"
+  center_in_box "Recovery TROJAN (Expired)"
   printf "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}\n"
   local exp_db="$BASE/db/${PROTO}_expired.txt"
   if [ ! -f "$exp_db" ] || [ ! -s "$exp_db" ]; then
@@ -4644,13 +4697,13 @@ do_recovery() {
 }
 
 do_check_login() {
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local brand
   brand=$(cat "$BASE/config/brand.txt" 2>/dev/null | head -1 | tr -d '\n')
   [ -z "$brand" ] && brand="SUNEK VPN"
-  if declare -f draw_box >/dev/null 2>&1; then draw_box "$brand" 60; else echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"; printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "$brand"; echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"; fi
+  if declare -f draw_box >/dev/null 2>&1; then draw_box "$brand" 60; else echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"; center_in_box "$brand"; echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"; fi
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "TROJAN User Login"
+  center_in_box "TROJAN User Login"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   printf "${BLUE}│${RESET} ${BOLD}%-16s %-12s %-7s %-7s %-8s${RESET} ${BLUE}│${RESET}\n" "Username" "Usage" "Total" "Online" "Log"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
@@ -4686,9 +4739,9 @@ do_check_login() {
 
 
 while true; do
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "TROJAN"
+  center_in_box "TROJAN"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Create"
@@ -4700,11 +4753,11 @@ while true; do
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "7.) Check Users Login"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "8.) List Users"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" ""
-  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "LOCK & UNLOCK"
+  center_in_box "LOCK & UNLOCK"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "9.) Lock"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "10.) Unlock"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" ""
-  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "UTILITIES"
+  center_in_box "UTILITIES"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "11.) Check Config"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "12.) Recovery"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "13.) Back to Menu"
@@ -4739,14 +4792,14 @@ cat > "$ETC/menu/features.sh" << '__EMBED_EOF__'
 MYTUNNEL_PREFIX="${MYTUNNEL_PREFIX:-}"
 if [ -n "$MYTUNNEL_PREFIX" ]; then BASE="$MYTUNNEL_PREFIX/etc/mytunnel"; else BASE="/etc/mytunnel"; fi
 for f in "$BASE/lib/colors.sh" "$BASE/lib/helpers.sh" "$BASE/lib/features_helpers.sh" "$BASE/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 
 while true; do
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "FEATURES"
+  center_in_box "FEATURES"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" " 1.) Check Bandwidth"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" " 2.) Set Date Auto Reboot"
@@ -4801,9 +4854,9 @@ cat > "$ETC/menu/bot.sh" << '__EMBED_EOF__'
 MYTUNNEL_PREFIX="${MYTUNNEL_PREFIX:-}"
 if [ -n "$MYTUNNEL_PREFIX" ]; then BASE="$MYTUNNEL_PREFIX/etc/mytunnel"; else BASE="/etc/mytunnel"; fi
 for f in "$BASE/lib/colors.sh" "$BASE/lib/helpers.sh" "$BASE/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 CONF="$BASE/config/bot.conf"
 SERVICE="mytunnel-bot"
 
@@ -4934,19 +4987,19 @@ bot_remove(){
 }
 
 while true; do
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "SETUP BOT TELEGRAM"
+  center_in_box "SETUP BOT TELEGRAM"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   bot_status | while IFS= read -r line; do printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "$line"; done
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
-  echo -e "${BLUE}│${RESET} 1.) Set Token & Admin ID                           ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 2.) Test Kirim Pesan                               ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 3.) Aktifkan / Start Bot                           ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 4.) Nonaktifkan / Stop Bot                         ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 5.) Hapus Config                                    ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 6.) Lihat Log                                       ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 7.) Back to Menu   x.) Exit                        ${BLUE}│${RESET}"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Set Token & Admin ID"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "2.) Test Kirim Pesan"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "3.) Aktifkan / Start Bot"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "4.) Nonaktifkan / Stop Bot"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "5.) Hapus Config"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "6.) Lihat Log"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "7.) Back to Menu   x.) Exit"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo -ne "${BOLD}Select [1-7 or x]: ${RESET}"
   read -r c
@@ -4971,14 +5024,14 @@ cat > "$ETC/menu/advanced.sh" << '__EMBED_EOF__'
 MYTUNNEL_PREFIX="${MYTUNNEL_PREFIX:-}"
 if [ -n "$MYTUNNEL_PREFIX" ]; then BASE="$MYTUNNEL_PREFIX/etc/mytunnel"; else BASE="/etc/mytunnel"; fi
 for f in "$BASE/lib/colors.sh" "$BASE/lib/helpers.sh" "$BASE/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 
 while true; do
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "ADVANCED (WARP, Routing, SlowDNS)"
+  center_in_box "ADVANCED (WARP, Routing, SlowDNS)"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   # status ringkas 60 kolom
   _warp="OFF"; _routing="0 rules"; _slowdns="OFF"
@@ -5034,8 +5087,8 @@ DOMAIN_FILE="$ETC/config/domain.txt"
 # source colors/helpers if present
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
 # fallback colors
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
 
 get_public_ip() {
   local ip=""
@@ -5176,8 +5229,8 @@ ETC="${BASE}/etc/mytunnel"
 LOG="${BASE}/var/log/mytunnel.log"
 SYSCTL_DIR="${BASE}/etc/sysctl.d"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
 
 ensure_swap() {
   local mem swap_kb need
@@ -5465,8 +5518,8 @@ CERT_DIR="$ETC/cert"
 ACME_HOME="$HOME/.acme.sh"
 [ -n "$BASE" ] && ACME_HOME="$BASE$ACME_HOME"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
 
 die() { echo -e "${RED}✗ $1${RESET}" | tee -a "$LOG" 2>/dev/null || true; echo -e "${YELLOW}Penyebab: $2${RESET}" >&2; exit 1; }
 
@@ -5844,8 +5897,8 @@ XRAY_BIN="${BASE}/usr/local/bin/xray"
 XRAY_CFG="$XRAY_ETC/config.json"
 XRAY_LOGDIR="${BASE}/var/log/xray"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
 
 die() { echo -e "${RED}✗ $1${RESET}" | tee -a "$LOG" 2>/dev/null || true; echo -e "${YELLOW}Penyebab: $2${RESET}" >&2; exit 1; }
 
@@ -6206,8 +6259,8 @@ NGINX_CONF_DIR="${BASE}/etc/nginx"
 NGINX_SITE="$NGINX_CONF_DIR/conf.d/mytunnel.conf"
 NGINX_MAIN="$NGINX_CONF_DIR/nginx.conf"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
 
 die() { echo -e "${RED}✗ $1${RESET}" | tee -a "$LOG" 2>/dev/null || true; echo -e "${YELLOW}Penyebab: $2${RESET}" >&2; exit 1; }
 
@@ -6772,8 +6825,8 @@ DB_CONF="${BASE}/etc/default/dropbear"
 BANNER_SRC="$ETC/config/banner.txt"
 BANNER_DST="${BASE}/etc/mytunnel/banner.txt"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
 
 die() { echo -e "${RED}✗ $1${RESET}" | tee -a "$LOG" 2>/dev/null || true; echo -e "${YELLOW}Penyebab: $2${RESET}" >&2; exit 1; }
 
@@ -7027,7 +7080,7 @@ PF="${ETC}/config/ports.conf"
 SSHD_CFG="${BASE}/etc/ssh/sshd_config"
 [ -z "$BASE" ] && SSHD_CFG="/etc/ssh/sshd_config"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"; CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"; CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
 
 die() { echo -e "${RED}✗ $1${RESET}" | tee -a "$LOG" 2>/dev/null || true; echo -e "${YELLOW}Penyebab: $2${RESET}" >&2; exit 1; }
 
@@ -7304,7 +7357,7 @@ ETC="${BASE}/etc/mytunnel"
 LOG="${BASE}/var/log/mytunnel.log"
 PF="${ETC}/config/ports.conf"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"; CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"; CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
 
 die(){ echo -e "${RED}✗ $1${RESET}" | tee -a "$LOG" 2>/dev/null || true; echo -e "${YELLOW}Penyebab: $2${RESET}" >&2; exit 1; }
 
@@ -7506,7 +7559,7 @@ ETC="${BASE}/etc/mytunnel"
 LOG="${BASE}/var/log/mytunnel.log"
 PF="${ETC}/config/ports.conf"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"; CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"; CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
 
 die(){ echo -e "${RED}✗ $1${RESET}" | tee -a "$LOG" 2>/dev/null || true; echo -e "${YELLOW}Penyebab: $2${RESET}" >&2; exit 1; }
 
@@ -7747,8 +7800,8 @@ LOG="${BASE}/var/log/mytunnel.log"
 PF="${ETC}/config/ports.conf"
 CONF="${BASE}/etc/udp/config.json"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"; RESET="${RESET:-$'\033[0m'}"
 
 UDP_CUSTOM_URL="${UDP_CUSTOM_URL:-https://github.com/zhets/udp-custom/raw/main/udp-custom-linux-amd64}"
 UDP_CUSTOM_SHA="2a1b5584c7947feb5a02e847e09795751024f63ce7137a353c2b9c2a4282d636"
@@ -7935,7 +7988,7 @@ ETC="${BASE}/etc/mytunnel"
 LOG="${BASE}/var/log/mytunnel.log"
 PF="${ETC}/config/ports.conf"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"; CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"; CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
 
 die(){ echo -e "${RED}✗ $1${RESET}" | tee -a "$LOG" 2>/dev/null || true; echo -e "${YELLOW}Penyebab: $2${RESET}" >&2; exit 1; }
 
@@ -8202,7 +8255,7 @@ LOG="${BASE}/var/log/mytunnel.log"
 PF="${ETC}/config/ports.conf"
 DOMAIN_FILE="${ETC}/config/domain.txt"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"; CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"; CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
 
 die(){ echo -e "${RED}✗ $1${RESET}" | tee -a "$LOG" 2>/dev/null || true; echo -e "${YELLOW}Penyebab: $2${RESET}" >&2; return 1; }
 
@@ -8886,7 +8939,7 @@ BASE="${MYTUNNEL_PREFIX:-}"
 ETC="${BASE}/etc/mytunnel"
 LOG="${BASE}/var/log/mytunnel.log"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"; CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"; CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
 install_logrotate(){
   local src="$ETC/logrotate.d/mytunnel"
   local dst="/etc/logrotate.d/mytunnel"
@@ -8963,8 +9016,8 @@ NGINX_MAIN="${BASE}/etc/nginx/nginx.conf"
 # CERT_CRT="$ETC/cert/fullchain.crt"
 # CERT_KEY="$ETC/cert/private.key"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
 
 die() { echo -e "${RED}✗ $1${RESET}" | tee -a "$LOG" 2>/dev/null || true; echo -e "${YELLOW}Penyebab: $2${RESET}" >&2; exit 1; }
 
@@ -9236,7 +9289,7 @@ ETC="${BASE}/etc/mytunnel"
 BIN="${BASE}/usr/local/bin"
 LOG="${BASE}/var/log/mytunnel.log"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"; RESET="${RESET:-$'\033[0m'}"
 
 _unmask_nginx(){
   # nginx pernah di-mask (temuan lapangan: unit ter-mask -> nginx mati, semua
@@ -9783,7 +9836,7 @@ BASE="${MYTUNNEL_PREFIX:-}"
 ETC="${BASE}/etc/mytunnel"
 LOG="${BASE}/var/log/mytunnel.log"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"; CYAN="${CYAN:-\033[0;36m}"; RESET="${RESET:-\033[0m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"; CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
 die(){ echo -e "${RED}✗ $1${RESET}" | tee -a "$LOG" 2>/dev/null || true; echo -e "${YELLOW}Penyebab: $2${RESET}" >&2; exit 1; }
 _log(){ echo "[$(date '+%Y-%m-%d %H:%M:%S')] zivpn: $1" >> "$LOG" 2>/dev/null || true; }
 
@@ -12229,9 +12282,9 @@ XRAY_ETC="${MYTUNNEL_PREFIX:-}/usr/local/etc/xray"
 [ -z "$MYTUNNEL_PREFIX" ] && XRAY_ETC="/usr/local/etc/xray"
 XRAY_CFG="$XRAY_ETC/config.json"
 for f in "$BASE/lib/colors.sh" "$BASE/lib/helpers.sh" "$BASE/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 WGCF_URL="https://github.com/ViRb3/wgcf/releases/latest/download/wgcf_linux_amd64"
 WGCF_SHA=""  # upstream tidak publish sha tetap; tampilkan url dan verifikasi manual
 WGCF_BIN="${MYTUNNEL_PREFIX:-}/usr/local/bin/wgcf"
@@ -12360,20 +12413,20 @@ warp_uninstall(){
 }
 
 while true; do
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "WARP CLOUDFLARE"
+  center_in_box "WARP CLOUDFLARE"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "Sumber: github.com/ViRb3/wgcf (HTTPS)"
   if warp_xray_has_warp 2>/dev/null; then printf "${BLUE}│${RESET} Outbound warp: ${GREEN}%-42s${RESET} ${BLUE}│${RESET}\n" "ADA"; else printf "${BLUE}│${RESET} Outbound warp: ${YELLOW}%-42s${RESET} ${BLUE}│${RESET}\n" "TIDAK ADA"; fi
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
-  echo -e "${BLUE}│${RESET} 1.) Install wgcf + Registrasi                        ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 2.) Aktifkan Outbound warp di Xray                  ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 3.) Nonaktifkan Outbound warp                       ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 4.) Cek Status & IP                                 ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 5.) Ganti License WARP+                             ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 6.) Uninstall                                       ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 7.) Back                                            ${BLUE}│${RESET}"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Install wgcf + Registrasi"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "2.) Aktifkan Outbound warp di Xray"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "3.) Nonaktifkan Outbound warp"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "4.) Cek Status & IP"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "5.) Ganti License WARP+"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "6.) Uninstall"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "7.) Back"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo -ne "${BOLD}Select [1-7]: ${RESET}"
   read -r c
@@ -12401,9 +12454,9 @@ XRAY_ETC="${MYTUNNEL_PREFIX:-}/usr/local/etc/xray"
 [ -z "$MYTUNNEL_PREFIX" ] && XRAY_ETC="/usr/local/etc/xray"
 XRAY_CFG="$XRAY_ETC/config.json"
 for f in "$BASE/lib/colors.sh" "$BASE/lib/helpers.sh" "$BASE/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 
 routing_outbounds(){
   if ! command -v jq >/dev/null 2>&1; then echo -e "${RED}jq dibutuhkan${RESET}"; return 1; fi
@@ -12564,9 +12617,9 @@ routing_check(){
 }
 
 while true; do
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "ROUTING XRAY"
+  center_in_box "ROUTING XRAY"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   if command -v jq >/dev/null 2>&1 && [ -f "$XRAY_CFG" ]; then
     printf "${BLUE}│${RESET} Outbounds: %-43s ${BLUE}│${RESET}\n" "$(jq -r '.outbounds[].tag' "$XRAY_CFG" 2>/dev/null | tr '\n' ' ' | cut -c1-43)"
@@ -12575,16 +12628,16 @@ while true; do
     printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "jq/config tidak tersedia"
   fi
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
-  echo -e "${BLUE}│${RESET} OUTBOUNDS                                         ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 1.) List Outbounds                                 ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 2.) Tambah Outbound                                ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 3.) Hapus Outbound                                 ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} RULES (prioritas atas->bawah)                     ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 4.) List Rules                                     ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 5.) Tambah Rule (geosite/domain/ip/protocol)       ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 6.) Hapus Rule                                     ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 7.) Check Config Routing                           ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 8.) Back                                           ${BLUE}│${RESET}"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "OUTBOUNDS"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) List Outbounds"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "2.) Tambah Outbound"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "3.) Hapus Outbound"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "RULES (prioritas atas->bawah)"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "4.) List Rules"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "5.) Tambah Rule (geosite/domain/ip/protocol)"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "6.) Hapus Rule"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "7.) Check Config Routing"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "8.) Back"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo -ne "${BOLD}Select [1-8]: ${RESET}"
   read -r c
@@ -12613,9 +12666,9 @@ cat > "$ETC/advanced/slowdns.sh" << '__EMBED_EOF__'
 MYTUNNEL_PREFIX="${MYTUNNEL_PREFIX:-}"
 if [ -n "$MYTUNNEL_PREFIX" ]; then BASE="$MYTUNNEL_PREFIX/etc/mytunnel"; else BASE="/etc/mytunnel"; fi
 for f in "$BASE/lib/colors.sh" "$BASE/lib/helpers.sh" "$BASE/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 CONF="$BASE/config/slowdns.conf"
 KEYDIR="$BASE/slowdns"
 SERVICE="mytunnel-slowdns"
@@ -13101,9 +13154,9 @@ slowdns_uninstall(){
 }
 
 while true; do
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "SLOWDNS (DNS tunneling -> SSH)"
+  center_in_box "SLOWDNS (DNS tunneling -> SSH)"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   if [ -f "$CONF" ]; then
     _slowdns_read_conf
@@ -13115,14 +13168,14 @@ while true; do
     printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "Belum terinstall"
   fi
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
-  echo -e "${BLUE}│${RESET} 1.) Install & Setup (NS + keypair + tipe record)    ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 2.) Cek Status & Info DNS                          ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 3.) Aktifkan Service                               ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 4.) Nonaktifkan Service                            ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 5.) Ganti Nameserver (NS domain)                    ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 6.) Ganti Tipe Record (TXT/NULL/CNAME/NS/MX/SRV)   ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 7.) Uninstall (kembalikan resolver)                ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 8.) Back                                           ${BLUE}│${RESET}"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Install & Setup (NS + keypair + tipe record)"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "2.) Cek Status & Info DNS"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "3.) Aktifkan Service"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "4.) Nonaktifkan Service"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "5.) Ganti Nameserver (NS domain)"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "6.) Ganti Tipe Record (TXT/NULL/CNAME/NS/MX/SRV)"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "7.) Uninstall (kembalikan resolver)"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "8.) Back"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo -ne "${BOLD}Select [1-8]: ${RESET}"
   read -r c
@@ -13151,8 +13204,8 @@ BASE="${MYTUNNEL_PREFIX:-}"
 if [ -n "$BASE" ]; then ETC="$BASE/etc/mytunnel"; else ETC="/etc/mytunnel"; fi
 PF="$ETC/config/ports.conf"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/advanced_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"; CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"; CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 
 pause(){ echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 
@@ -13209,7 +13262,7 @@ show_status(){
   s_slow=$(_status_one "slowdns" "mytunnel-slowdns" "53,5300")
   s_udp=$(_status_one "udp-custom" "mytunnel-udp-custom" "1-65535")
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Layanan SSH Tambahan (OPSIONAL)"
+  center_in_box "Layanan SSH Tambahan (OPSIONAL)"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   printf "${BLUE}│${RESET} Squid  3128 (127.0.0.1 only) : %-10s              ${BLUE}│${RESET}\n" "$s_squid"
   printf "${BLUE}│${RESET} UDPGW  7100-7600 (127.0.0.1) : %-10s              ${BLUE}│${RESET}\n" "$s_udpgw"
@@ -13218,8 +13271,8 @@ show_status(){
   printf "${BLUE}│${RESET} SlowDNS 53,5300 -> 5300    : %-10s              ${BLUE}│${RESET}\n" "$s_slow"
   printf "${BLUE}│${RESET} UDP-Custom 1-65535 exclude : %-10s              ${BLUE}│${RESET}\n" "$s_udp"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
-  echo -e "${BLUE}│${RESET} Port dari $PF                 ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 80/443 exclusive nginx (no mux, tunneling prio) ${BLUE}│${RESET}"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "Port dari $PF"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "80/443 exclusive nginx (no mux, tunneling prio)"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
 }
 
@@ -13232,26 +13285,26 @@ confirm(){
 
 main(){
   while true; do
-    clear 2>/dev/null || printf '\033c'
+    clear 2>/dev/null || true
     show_status
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    echo -e "${BLUE}│${RESET} 1.) Install Squid 3128 (secure, localhost only)     ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 2.) Uninstall Squid                                ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 3.) Install UDPGW 7100-7600 (badvpn 127.0.0.1)      ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 4.) Uninstall UDPGW                                ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 5.) Install OHP 9080/9088 (SSH+OVPN)                ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 6.) Uninstall OHP                                  ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 7.) Install OpenVPN (1194/25000/442+PAM+zip :81)    ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 8.) Uninstall OpenVPN                              ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 9.) Install SlowDNS 53->5300 (redirect)            ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 10.) Uninstall SlowDNS                             ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 11.) Install UDP-Custom 1-65535 (exclude)           ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 12.) Uninstall UDP-Custom                          ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 13.) Install SEMUA (Squid+UDPGW+OHP+OVPN+SD+UC)     ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 14.) Uninstall SEMUA                               ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 15.) Status detail                                 ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} b.) Back                                            ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} x.) Exit                                           ${BLUE}│${RESET}"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Install Squid 3128 (secure, localhost only)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "2.) Uninstall Squid"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "3.) Install UDPGW 7100-7600 (badvpn 127.0.0.1)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "4.) Uninstall UDPGW"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "5.) Install OHP 9080/9088 (SSH+OVPN)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "6.) Uninstall OHP"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "7.) Install OpenVPN (1194/25000/442+PAM+zip :81)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "8.) Uninstall OpenVPN"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "9.) Install SlowDNS 53->5300 (redirect)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "10.) Uninstall SlowDNS"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "11.) Install UDP-Custom 1-65535 (exclude)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "12.) Uninstall UDP-Custom"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "13.) Install SEMUA (Squid+UDPGW+OHP+OVPN+SD+UC)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "14.) Uninstall SEMUA"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "15.) Status detail"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "b.) Back"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "x.) Exit"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     echo -ne "${BOLD}Select [1-15,b,x]: ${RESET}"
     read -r c
@@ -13379,23 +13432,23 @@ MYTUNNEL_PREFIX="${MYTUNNEL_PREFIX:-}"
 pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 if [ -n "$MYTUNNEL_PREFIX" ]; then BASE="$MYTUNNEL_PREFIX/etc/mytunnel"; else BASE="/etc/mytunnel"; fi
 for f in "$BASE/lib/colors.sh" "$BASE/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; GREY="${GREY:-\033[0;37m}"; RESET="${RESET:-\033[0m}"; BOLD="${BOLD:-\033[1m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; GREY="${GREY:-$'\033[0;37m'}"; RESET="${RESET:-$'\033[0m'}"; BOLD="${BOLD:-$'\033[1m'}"
 CONF="$BASE/config/lock_time.conf"
 _get_cur() { local v=15; [ -f "$CONF" ] && . "$CONF" 2>/dev/null || true; v="${LOCK_MIN:-15}"; [[ "$v" =~ ^[0-9]+$ ]] || v=15; echo "$v"; }
 lock_time_menu() {
   while true; do
     cur=$(_get_cur)
-    clear 2>/dev/null || printf '\033c'
-    if declare -f draw_box >/dev/null 2>&1; then draw_box "SUNEK VPN" 60; else echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"; printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "SUNEK VPN"; echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"; fi
+    clear 2>/dev/null || true
+    if declare -f draw_box >/dev/null 2>&1; then draw_box "SUNEK VPN" 60; else echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"; center_in_box "SUNEK VPN"; echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"; fi
     # Time Banned Active line - centered inside 60 box
     _t="Time Banned Active : ${cur}m:0s"
     _len=${#_t}; _inner=58; _left=$(( (_inner - _len)/2 )); _right=$(( _inner - _len - _left ))
     printf "${BLUE}│${RESET}%*s${BOLD}%s${RESET}%*s${BLUE}│${RESET}\n" "$_left" "" "$_t" "$_right" ""
     echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
-    echo -e "${BLUE}│${RESET} 1.) Set Time Banned                                ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 2.) Back to Menu                                   ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} x.) Exit                                           ${BLUE}│${RESET}"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Set Time Banned"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "2.) Back to Menu"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "x.) Exit"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     echo -ne "${BOLD}Select From Options [1-2 or x] : ${RESET}"
     read -r c || break
@@ -13432,9 +13485,9 @@ cat > "$ETC/features/bandwidth.sh" << '__EMBED_EOF__'
 BASE="${MYTUNNEL_PREFIX:-}"
 ETC="${BASE}/etc/mytunnel"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/sysinfo.sh" "$ETC/lib/features_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"
 
 pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 
@@ -13451,14 +13504,14 @@ show_bandwidth() {
   while true; do
     clear 2>/dev/null || printf "\033c"
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Check Bandwidth"
+    center_in_box "Check Bandwidth"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    echo -e "${BLUE}│${RESET} 1.) Hari ini                                       ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 2.) Bulan ini                                      ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 3.) 5 menit terakhir (vnstat -5)                  ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 4.) Live (vnstat -l)                               ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 5.) Kembali                                        ${BLUE}│${RESET}"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Hari ini"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "2.) Bulan ini"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "3.) 5 menit terakhir (vnstat -5)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "4.) Live (vnstat -l)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "5.) Kembali"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     read -rp " Pilih [1-5]: " c 2>/dev/null || c=5
     case "$c" in
@@ -13487,9 +13540,9 @@ CRON_FILE="${BASE}/etc/cron.d/mytunnel-reboot"
 [ -z "$BASE" ] && CRON_FILE="/etc/cron.d/mytunnel-reboot"
 LOG="${BASE}/var/log/mytunnel.log"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/features_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"
 
 pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 
@@ -13509,7 +13562,7 @@ show_schedule() {
 
 set_schedule() {
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Set Auto Reboot"
+  center_in_box "Set Auto Reboot"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo -e " 1.) Harian   2.) Mingguan   3.) Bulanan   4.) Nonaktifkan"
   read -rp " Pilih [1-4]: " t 2>/dev/null || t=4
@@ -13543,13 +13596,13 @@ main() {
   while true; do
     clear 2>/dev/null || printf "\033c"
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Reboot VPS"
+    center_in_box "Reboot VPS"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     show_schedule
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    echo -e "${BLUE}│${RESET} 1.) Set jadwal auto reboot                       ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 2.) Reboot sekarang                              ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 3.) Kembali                                      ${BLUE}│${RESET}"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Set jadwal auto reboot"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "2.) Reboot sekarang"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "3.) Kembali"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     read -rp " Pilih [1-3]: " c 2>/dev/null || c=3
     case "$c" in 1) set_schedule ;; 2) do_reboot_now ;; 3) break ;; *) echo -e "${RED}Tidak valid${RESET}"; sleep 1 ;; esac
@@ -13567,9 +13620,9 @@ cat > "$ETC/features/speedtest.sh" << '__EMBED_EOF__'
 BASE="${MYTUNNEL_PREFIX:-}"
 ETC="${BASE}/etc/mytunnel"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/features_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"
 
 pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 
@@ -13645,9 +13698,9 @@ BASE="${MYTUNNEL_PREFIX:-}"
 ETC="${BASE}/etc/mytunnel"
 LOG="${BASE}/var/log/mytunnel.log"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/features_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"
 
 # Daftar lengkap; sebelumnya hanya 8 entri sehingga 9 layanan inti
 # (zivpn, squid, slowdns, openvpn, ohp, udpgw, udp-custom, fail2ban, bot)
@@ -13658,7 +13711,7 @@ pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 
 show_all() {
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Check All Service"
+  center_in_box "Check All Service"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   local s st col
   for s in $SERVICES; do
@@ -13720,10 +13773,10 @@ main() {
     clear 2>/dev/null || printf "\033c"
     show_all
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    echo -e "${BLUE}│${RESET} 1.) Restart yang OFF                                     ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 2.) Start/Stop/Restart satu service                      ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 3.) Refresh                                              ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 4.) Kembali                                              ${BLUE}│${RESET}"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Restart yang OFF"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "2.) Start/Stop/Restart satu service"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "3.) Refresh"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "4.) Kembali"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     read -rp " Pilih [1-4]: " c 2>/dev/null || c=4
     case "$c" in 1) restart_dead; pause ;; 2) manage_one ;; 3) continue ;; 4) break ;; *) echo -e "${RED}Tidak valid${RESET}"; sleep 1;; esac
@@ -13758,9 +13811,9 @@ TAR_ROOT="${BASE:-/}"
 # tambahan manual: fh_log (features_helpers) + ah_notify_admin (advanced_helpers)
 for _f in "$ETC/lib/features_helpers.sh" "$ETC/lib/advanced_helpers.sh"; do [ -f "$_f" ] && . "$_f" 2>/dev/null || true; done
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/features_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"
 
 pause() { [ -n "$MYTUNNEL_PREFIX" ] && return 0; [ ! -t 0 ] && return 0; echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 
@@ -13862,14 +13915,14 @@ do_list_backup() {
   local files
   files=$(_backup_list)
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Daftar Backup"
+  center_in_box "Daftar Backup"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   if [ ! -d "$REAL_BACKUP_DIR" ] || [ -z "$files" ]; then
     printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "(belum ada backup)"
   else
     printf '%s\n' "$files" | head -n 20 | while read -r f; do
       local sz; sz=$(du -h "$f" 2>/dev/null | awk '{print $1}')
-      printf "${BLUE}│${RESET} %-40s %6s              ${BLUE}│${RESET}\n" "$(basename "$f" | cut -c1-40)" "$sz"
+      printf "${BLUE}│${RESET} %-40s %6s%10s${BLUE}│${RESET}\n" "$(basename "$f" | cut -c1-40)" "$sz" ""
     done
   fi
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
@@ -13988,13 +14041,13 @@ main() {
   while true; do
     clear 2>/dev/null || printf "\033c"
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Backup & Restore"
+    center_in_box "Backup & Restore"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     do_list_backup
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    echo -e "${BLUE}│${RESET} 1.) Backup sekarang                              ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 2.) Restore dari backup                          ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 3.) Kembali                                      ${BLUE}│${RESET}"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Backup sekarang"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "2.) Restore dari backup"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "3.) Kembali"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     read -rp " Pilih [1-3]: " c 2>/dev/null || c=3
     case "$c" in 1) do_backup ;; 2) do_restore ;; 3) break ;; *) echo -e "${RED}Tidak valid${RESET}"; sleep 1;; esac
@@ -14014,9 +14067,9 @@ ETC="${BASE}/etc/mytunnel"
 LOG="${BASE}/var/log/mytunnel.log"
 DOMAIN_FILE="$ETC/config/domain.txt"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/features_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"
 
 pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 
@@ -14031,7 +14084,7 @@ main() {
   local cur new
   cur=$(cat "$DOMAIN_FILE" 2>/dev/null | head -1 | tr -d ' \n'); [ -z "$cur" ] && cur="-"
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Change Domain VPS"
+  center_in_box "Change Domain VPS"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo -e " Domain sekarang: ${CYAN}$cur${RESET}"
   echo -e "${YELLOW}Akun lama perlu link baru setelah ganti domain!${RESET}"
@@ -14204,9 +14257,9 @@ LOG="${BASE}/var/log/mytunnel.log"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/features_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
 # banner guard
 [ -f "$ETC/lib/banner_guard.sh" ] && . "$ETC/lib/banner_guard.sh" 2>/dev/null || true
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"
 
 pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 
@@ -14216,7 +14269,7 @@ edit_banner() {
   [ -z "$cur" ] && cur=" | SUNEK VPN - No hacking, use legally |"
   preview=$(echo "$cur" | head -n 3 | tr -d '\r' | cut -c1-60)
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Change Banner SSH"
+  center_in_box "Change Banner SSH"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo -e " Saat ini (${CYAN}$(wc -c < "$BANNER_FILE" 2>/dev/null || echo 0) bytes${RESET}): ${CYAN}$preview${RESET} ..."
   echo -e "${DIM}Banner tampil saat SSH login (Dropbear/OpenSSH). HTML boleh, multiline OK.${RESET}"
@@ -14263,7 +14316,7 @@ $line"; fi
 
 edit_response() {
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Change Response (Nginx)"
+  center_in_box "Change Response (Nginx)"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   local cur=""
   local resp_file="${BASE}/etc/mytunnel/config/response.html"
@@ -14358,7 +14411,7 @@ main() {
   while true; do
     clear 2>/dev/null || printf "\033c"
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Change Banner & Response"
+    center_in_box "Change Banner & Response"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     local bsize=0
     [ -f "$BANNER_FILE" ] && bsize=$(wc -c < "$BANNER_FILE" 2>/dev/null | tr -d ' ')
@@ -14369,10 +14422,10 @@ main() {
     echo -e " Banner: ${CYAN}$(cat "$BANNER_FILE" 2>/dev/null | head -n 1 | cut -c1-50)... (${bsize}b)${RESET}"
     echo -e " Response: ${CYAN}$([ -f "$resp_file" ] && echo "${rsize}b custom" || echo "default")${RESET}"
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    echo -e "${BLUE}│${RESET} 1.) Edit Banner SSH                               ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 2.) Edit Response Web (HTML custom)               ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 3.) Jadikan banner permanen (chattr +i)            ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 4.) Kembali                                       ${BLUE}│${RESET}"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Edit Banner SSH"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "2.) Edit Response Web (HTML custom)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "3.) Jadikan banner permanen (chattr +i)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "4.) Kembali"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     read -rp " Pilih [1-4]: " c 2>/dev/null || c=4
     case "$c" in 1) edit_banner ;; 2) edit_response ;; 3) if command -v bg_enforce >/dev/null 2>&1; then bg_enforce 2>/dev/null; echo -e "${GREEN}Status: $(bg_status 2>/dev/null)${RESET}"; pause; else echo -e "${YELLOW}banner_guard tidak tersedia${RESET}"; pause; fi ;; 4) break ;; *) echo -e "${RED}Tidak valid${RESET}"; sleep 1;; esac
@@ -14395,9 +14448,9 @@ SSHD_CFG="${BASE}/etc/ssh/sshd_config"
 SSHD_D="${BASE}/etc/ssh/sshd_config.d"
 [ -z "$BASE" ] && SSHD_D="/etc/ssh/sshd_config.d"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/features_helpers.sh" "$ETC/lib/banner_guard.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"
 
 pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 
@@ -14411,37 +14464,37 @@ _ssh_port_used() {
 
 show_status() {
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Security Status"
+  center_in_box "Security Status"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   local syn cookies
   syn=$(sysctl -n net.ipv4.tcp_syncookies 2>/dev/null || echo "?")
   cookies=$(sysctl -n net.ipv4.tcp_syn_retries 2>/dev/null || echo "?")
-  printf "${BLUE}│${RESET} %-22s : %-30s ${BLUE}│${RESET}\n" "tcp_syncookies" "$syn"
-  printf "${BLUE}│${RESET} %-22s : %-30s ${BLUE}│${RESET}\n" "tcp_syn_retries" "$cookies"
+  printf "${BLUE}│${RESET} %-22s : %-31s ${BLUE}│${RESET}\n" "tcp_syncookies" "$syn"
+  printf "${BLUE}│${RESET} %-22s : %-31s ${BLUE}│${RESET}\n" "tcp_syn_retries" "$cookies"
   local ufw_st fail_st
   if command -v ufw >/dev/null 2>&1; then ufw_st=$(ufw status 2>&1 | head -1 | cut -c1-30); else ufw_st="not installed"; fi
-  printf "${BLUE}│${RESET} %-22s : %-30s ${BLUE}│${RESET}\n" "UFW" "$ufw_st"
+  printf "${BLUE}│${RESET} %-22s : %-31s ${BLUE}│${RESET}\n" "UFW" "$ufw_st"
   if command -v fail2ban-client >/dev/null 2>&1; then
     fail_st=$(fail2ban-client status 2>&1 | sed -n "s/.*Jail list:[[:space:]]*//p" | cut -c1-28)
     [ -z "$fail_st" ] && fail_st="no jail"
   else fail_st="not installed"; fi
-  printf "${BLUE}│${RESET} %-22s : %-30s ${BLUE}│${RESET}\n" "fail2ban" "$fail_st"
+  printf "${BLUE}│${RESET} %-22s : %-31s ${BLUE}│${RESET}\n" "fail2ban" "$fail_st"
   # SSH hardening state
   local pr pw mx
   pr=$(sshd -T 2>/dev/null | awk '$1=="permitrootlogin"{print $2}'); [ -z "$pr" ] && pr="?"
   pw=$(sshd -T 2>/dev/null | awk '$1=="passwordauthentication"{print $2}'); [ -z "$pw" ] && pw="?"
   mx=$(sshd -T 2>/dev/null | awk '$1=="maxauthtries"{print $2}'); [ -z "$mx" ] && mx="?"
-  printf "${BLUE}│${RESET} %-22s : %-30s ${BLUE}│${RESET}\n" "ssh PermitRootLogin" "$pr"
-  printf "${BLUE}│${RESET} %-22s : %-30s ${BLUE}│${RESET}\n" "ssh PasswordAuth" "$pw"
-  printf "${BLUE}│${RESET} %-22s : %-30s ${BLUE}│${RESET}\n" "ssh MaxAuthTries" "$mx"
+  printf "${BLUE}│${RESET} %-22s : %-31s ${BLUE}│${RESET}\n" "ssh PermitRootLogin" "$pr"
+  printf "${BLUE}│${RESET} %-22s : %-31s ${BLUE}│${RESET}\n" "ssh PasswordAuth" "$pw"
+  printf "${BLUE}│${RESET} %-22s : %-31s ${BLUE}│${RESET}\n" "ssh MaxAuthTries" "$mx"
   local bg="n/a"
   if command -v bg_status >/dev/null 2>&1; then bg=$(bg_status 2>/dev/null); fi
-  printf "${BLUE}│${RESET} %-22s : %-30s ${BLUE}│${RESET}\n" "banner" "$(echo "$bg" | cut -c1-30)"
+  printf "${BLUE}│${RESET} %-22s : %-31s ${BLUE}│${RESET}\n" "banner" "$(echo "$bg" | cut -c1-30)"
   local aup="?"
   if command -v unattended-upgrade >/dev/null 2>&1; then
     if ls /etc/apt/apt.conf.d/*unattended* >/dev/null 2>&1; then aup="installed"; else aup="binary only"; fi
   else aup="not installed"; fi
-  printf "${BLUE}│${RESET} %-22s : %-30s ${BLUE}│${RESET}\n" "unattended-upgrades" "$aup"
+  printf "${BLUE}│${RESET} %-22s : %-31s ${BLUE}│${RESET}\n" "unattended-upgrades" "$aup"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
 }
 
@@ -14703,16 +14756,16 @@ main() {
     clear 2>/dev/null || printf "\033c"
     show_status
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    echo -e "${BLUE}│${RESET} 1.) Aktifkan SYN protection (sysctl+UFW)         ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 2.) Setup fail2ban sshd                         ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 3.) Hardening SSH (root key-only, no password)   ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 4.) Revert hardening SSH                         ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 5.) Jadikan banner permanen                      ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 6.) Buka lock banner                             ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 7.) Pasang cron banner_guard (*/5)               ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 8.) Auto security update (unattended-upgrades)    ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 9.) Terapkan semua (hati-hati, tanpa SSH harden)  ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 10.) Kembali                                     ${BLUE}│${RESET}"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Aktifkan SYN protection (sysctl+UFW)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "2.) Setup fail2ban sshd"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "3.) Hardening SSH (root key-only, no password)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "4.) Revert hardening SSH"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "5.) Jadikan banner permanen"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "6.) Buka lock banner"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "7.) Pasang cron banner_guard (*/5)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "8.) Auto security update (unattended-upgrades)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "9.) Terapkan semua (hati-hati, tanpa SSH harden)"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "10.) Kembali"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     read -rp " Pilih [1-10]: " c 2>/dev/null || c=10
     case "$c" in
@@ -14746,9 +14799,9 @@ REPO_FILE="$ETC/config/repo.txt"
 VERSION_FILE="$ETC/config/version.txt"
 LOG="${BASE}/var/log/mytunnel.log"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/features_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"
 
 pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 
@@ -14785,7 +14838,7 @@ check_update() {
   local_ver=$(cat "$VERSION_FILE" 2>/dev/null | head -1 | tr -d ' \n'); [ -z "$local_ver" ] && local_ver="v0.0.0"
   repo=$(get_repo_url)
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Set Auto Update"
+  center_in_box "Set Auto Update"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo -e " Lokal : ${CYAN}$local_ver${RESET}"
   echo -e " Repo  : ${DIM}$repo${RESET}"
@@ -14869,13 +14922,13 @@ main() {
   while true; do
     clear 2>/dev/null || printf "\033c"
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Auto Update"
+    center_in_box "Auto Update"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     echo -e " Lokal: $(cat "$VERSION_FILE" 2>/dev/null | head -1 || echo v0.0.0)  Repo: $(cat "$REPO_FILE" 2>/dev/null | head -1 || echo default)"
     echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-    echo -e "${BLUE}│${RESET} 1.) Cek & update sekarang                         ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 2.) Atur URL repo                                 ${BLUE}│${RESET}"
-    echo -e "${BLUE}│${RESET} 3.) Kembali                                       ${BLUE}│${RESET}"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1.) Cek & update sekarang"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "2.) Atur URL repo"
+    printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "3.) Kembali"
     echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
     read -rp " Pilih [1-3]: " c 2>/dev/null || c=3
     case "$c" in 1) check_update ;; 2) set_repo ;; 3) break ;; *) echo -e "${RED}Tidak valid${RESET}"; sleep 1;; esac
@@ -14892,16 +14945,16 @@ cat > "$ETC/features/sysinfo_page.sh" << '__EMBED_EOF__'
 BASE="${MYTUNNEL_PREFIX:-}"
 ETC="${BASE}/etc/mytunnel"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/sysinfo.sh" "$ETC/lib/features_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"
 
 pause() { echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 
 show() {
   clear 2>/dev/null || printf "\033c"
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Information System"
+  center_in_box "Information System"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   local os kernel cpu ram disk
   os=$(get_os 2>/dev/null || cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2 | head -1)
@@ -14910,26 +14963,26 @@ show() {
   [ -z "$cpu" ] && cpu=$(nproc 2>/dev/null)cores
   ram=$(free -h 2>/dev/null | awk '/Mem:/{print $2 " / " $7 " free"}' | head -1)
   disk=$(df -h / 2>/dev/null | awk 'NR==2{print $2 " / " $4 " free (" $5 " used)"}' | head -1)
-  printf "${BLUE}│${RESET} %-10s : %-44s ${BLUE}│${RESET}\n" "OS" "$(echo "$os" | cut -c1-44)"
-  printf "${BLUE}│${RESET} %-10s : %-44s ${BLUE}│${RESET}\n" "Kernel" "$kernel"
-  printf "${BLUE}│${RESET} %-10s : %-44s ${BLUE}│${RESET}\n" "CPU" "$cpu"
-  printf "${BLUE}│${RESET} %-10s : %-44s ${BLUE}│${RESET}\n" "RAM" "$ram"
-  printf "${BLUE}│${RESET} %-10s : %-44s ${BLUE}│${RESET}\n" "Disk /" "$disk"
+  _box_row "OS" $(echo "$os" | cut -c1-44)
+  _box_row "Kernel" $kernel
+  _box_row "CPU" $cpu
+  _box_row "RAM" $ram
+  _box_row "Disk /" $disk
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   local xv nv dv
   if command -v xray >/dev/null 2>&1; then xv=$(xray version 2>&1 | head -1 | cut -c1-44); else xv="not installed"; fi
   if command -v nginx >/dev/null 2>&1; then nv=$(nginx -v 2>&1 | cut -d/ -f2 | cut -c1-44); else nv="not installed"; fi
   if command -v dropbear >/dev/null 2>&1; then dv=$(dropbear -h 2>&1 | head -1 | cut -c1-44); else dv="not installed"; fi
-  printf "${BLUE}│${RESET} %-10s : %-44s ${BLUE}│${RESET}\n" "Xray" "$xv"
-  printf "${BLUE}│${RESET} %-10s : %-44s ${BLUE}│${RESET}\n" "Nginx" "$nv"
-  printf "${BLUE}│${RESET} %-10s : %-44s ${BLUE}│${RESET}\n" "Dropbear" "$dv"
+  _box_row "Xray" $xv
+  _box_row "Nginx" $nv
+  _box_row "Dropbear" $dv
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
-  printf "${BLUE}│${RESET} %-10s : %-44s ${BLUE}│${RESET}\n" "IP" "$(get_ip_cached 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')"
-  printf "${BLUE}│${RESET} %-10s : %-44s ${BLUE}│${RESET}\n" "Domain" "$(cat "$ETC/config/domain.txt" 2>/dev/null | head -1 | tr -d ' \n' || echo -)"
-  printf "${BLUE}│${RESET} %-10s : %-44s ${BLUE}│${RESET}\n" "Brand" "$(cat "$ETC/config/brand.txt" 2>/dev/null | head -1 | cut -c1-44 || echo SUNEK VPN)"
-  printf "${BLUE}│${RESET} %-10s : %-44s ${BLUE}│${RESET}\n" "Uptime" "$(uptime -p 2>/dev/null | cut -c1-44 || echo -)"
+  _box_row "IP" $(get_ip_cached 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
+  _box_row "Domain" $(cat "$ETC/config/domain.txt" 2>/dev/null | head -1 | tr -d ' \n' || echo -)
+  _box_row "Brand" $(cat "$ETC/config/brand.txt" 2>/dev/null | head -1 | cut -c1-44 || echo SUNEK VPN)
+  _box_row "Uptime" $(uptime -p 2>/dev/null | cut -c1-44 || echo -)
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
-  echo -e "${BLUE}│${RESET} ${DIM}Ports (ss -tlnp)${RESET}                                   ${BLUE}│${RESET}"
+  center_in_box "Ports (ss -tlnp)" "$DIM"
   ss -tlnp 2>/dev/null | head -n 15 | tail -n 10 | while read -r line; do
     printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "$(echo "$line" | cut -c1-56)"
   done
@@ -14950,9 +15003,9 @@ ETC="${BASE}/etc/mytunnel"
 VER_FILE="$ETC/config/dropbear_versions.txt"
 LOG="${BASE}/var/log/mytunnel.log"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh" "$ETC/lib/features_helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"
 
 # CFLAGS wajib: GCC 10-14 (Ubuntu 22.04/24.04, Debian 11/12/13) memakai default
 # -fno-common dan strict C99 sehingga Dropbear lama gagal link / penuh warning.
@@ -15136,7 +15189,7 @@ main() {
   fi
 
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "Change Dropbear Version"
+  center_in_box "Change Dropbear Version"
   echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
   local i=0 v
   while IFS= read -r v; do
@@ -15229,9 +15282,9 @@ for f in "$ETC_BASE/lib/colors.sh" "$ETC_BASE/lib/helpers.sh" "$ETC_BASE/lib/sys
 done
 
 # fallback colors jika belum ada
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; GREY="${GREY:-\033[0;37m}"
-RESET="${RESET:-\033[0m}"; BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; GREY="${GREY:-$'\033[0;37m'}"
+RESET="${RESET:-$'\033[0m'}"; BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"
 
 # helpers fallback jika sysinfo belum ada
 command -v get_os >/dev/null 2>&1 || get_os(){ . /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-$ID $VERSION_ID}"; }
@@ -15262,7 +15315,7 @@ get_traffic_day_fallback(){ command -v vnstat >/dev/null 2>&1 || { echo "-"; ret
 }
 
 render_login_dashboard(){
-  clear 2>/dev/null || printf '\033c'
+  clear 2>/dev/null || true
   local brand os ram swap city isp ip domain uptime
   brand=$(get_brand 2>/dev/null || echo "SUNEK VPN")
   os=$(get_os 2>/dev/null || echo "-")
@@ -16178,9 +16231,9 @@ XRAY_CFG="${BASE}/usr/local/etc/xray/config.json"
 [ -z "$BASE" ] && XRAY_CFG="/usr/local/etc/xray/config.json"
 DB_SSH="$ETC/db/ssh.txt"
 for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-\033[0;31m}"; GREEN="${GREEN:-\033[0;32m}"; YELLOW="${YELLOW:-\033[1;33m}"
-CYAN="${CYAN:-\033[0;36m}"; BLUE="${BLUE:-\033[0;34m}"; RESET="${RESET:-\033[0m}"
-BOLD="${BOLD:-\033[1m}"; DIM="${DIM:-\033[2m}"; GREY="${GREY:-\033[0;37m}"
+RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
+CYAN="${CYAN:-$'\033[0;36m'}"; BLUE="${BLUE:-$'\033[0;34m'}"; RESET="${RESET:-$'\033[0m'}"
+BOLD="${BOLD:-$'\033[1m'}"; DIM="${DIM:-$'\033[2m'}"; GREY="${GREY:-$'\033[0;37m'}"
 
 pause2() { [ -n "$MYTUNNEL_PREFIX" ] && return 0; [ ! -t 0 ] && return 0; echo ""; read -rp " Tekan Enter..." _ 2>/dev/null || true; }
 need_confirm() {
@@ -16195,7 +16248,7 @@ draw() { printf "${BLUE}%-60s${RESET}\n" "$(printf '─%.0s' $(seq 1 60))"; }
 
 header() {
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${BOLD}%-56s${RESET} ${BLUE}│${RESET}\n" "DOCTOR — Cek Konsistensi Data"
+  center_in_box "DOCTOR — Cek Konsistensi Data"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
 }
 
@@ -16271,11 +16324,11 @@ fix_menu() {
   if [ -n "$MYTUNNEL_PREFIX" ] || [ ! -t 0 ]; then return 0; fi
   echo ""
   echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  echo -e "${BLUE}│${RESET} Perbaikan (pilih angka, kosongkan lewati)         ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 1) Hapus akun kadaluarsa dari db+Xray+system      ${BLUE}│${RESET}"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "Perbaikan (pilih angka, kosongkan lewati)"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "1) Hapus akun kadaluarsa dari db+Xray+system"
   echo -e "${BLUE}│${RESET} 2) Hapus orphan Xray (ada di Xray tapi tidak di db)${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 3) Buat ulang user sistem yang hilang (dari db)  ${BLUE}│${RESET}"
-  echo -e "${BLUE}│${RESET} 4) Kembali                                        ${BLUE}│${RESET}"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "3) Buat ulang user sistem yang hilang (dari db)"
+  printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "4) Kembali"
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   local c; read -rp " Pilih [1-4]: " c 2>/dev/null || c=4
   case "$c" in

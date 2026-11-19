@@ -1,3 +1,36 @@
+## v1.13.22 — 2026-11-19 — Tampilan menu: satu kotak 60 kolom, judul center
+
+### Akar masalah warna (yang bikin kotak rusak)
+`lib/colors.sh` memakai kutip tunggal `RED='\033[0;31m'` -> isinya **backslash
+literal**, bukan karakter ESC. Akibatnya:
+- seluruh warna di semua menu TIDAK PERNAH aktif
+- teks `\033[0;34m` ikut tercetak, jadi lebar baris melar 70-105 karakter
+- kotak tidak pernah bisa rata karena border `│` bergeser
+
+Fix: ANSI-C quoting `RED=$'\033[0;31m'` (dan 47 fallback `${RED:-...}` di blok
+ter-embed ikut diperbaiki).
+
+### Satu sumber kebenaran lebar
+`_box_top/_box_bottom/_box_row/_box_row_menu/_box_center` dipindah ke
+`lib/helpers.sh` (dulu hanya di `menu/main.sh`, jadi file `features/*` tak bisa
+memakainya). `BOX_W=58` = isi di antara dua `│`; total baris = 60.
+
+### Judul & baris status di tengah
+- 65 judul kotak di menu & fitur kini lewat `center_in_box` (dulu `%-56s` = rata kiri)
+- 8 label seksi (LOCK & UNLOCK, UTILITIES, ...) ikut center
+- baris status `XRAY/SSH/WEB` dihitung paddingnya (`(BOX_W - len)/2`), bukan spasi manual
+- 90 baris opsi yang tadinya padding spasi manual -> `printf "%-56s"`
+
+### Hasil ukur (bukan perkiraan)
+19 file dirender di VPS, lebar dihitung per karakter (python3, bukan `awk length`
+yang salah untuk UTF-8):
+```
+menu/main 38 baris | ssh 24 | vmess 23 | vless 23 | trojan 23
+features 22 | advanced 12 | services 32 | sysinfo 29 | security 24 | ...
+TOTAL: 0 baris yang lebarnya salah
+```
+Sisa 1 selisih 1 char pada baris status = spasi kanan, oleh desain.
+
 ## v1.13.21 — 2026-11-19 — Verifikasi limit IP: lock + auto-unlock sesuai durasi
 
 Pertanyaan: apakah limit IP benar-benar berfungsi dan membuka otomatis sesuai durasi
