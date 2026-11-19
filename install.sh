@@ -305,12 +305,18 @@ fi
 [ -f "$ETC/config/banner.txt" ] || echo " | SUNEK VPN - No hacking, use legally |" > "$ETC/config/banner.txt"
 if [ ! -f "$ETC/config/ports.conf" ]; then
   cat > "$ETC/config/ports.conf" << 'PC_EOF'
+#!/bin/bash
+# mytunnel config/ports.conf - editable port map (no hardcode in script)
+# Ubah angka port di sini tanpa edit script; kosongkan untuk nonaktifkan baris optional
+# shellcheck disable=SC2034
+# Satu sumber kebenaran - TLS 443 via stunnel, nginx hanya 8443
 OPENSSH_PORT=444
 DROPBEAR_PORT=90
-TLS_PORT=443,8443
+TLS_PORT=8443
 NONTLS_PORT=80,8080
 ANY_PORT=2082,2083,8880
 SSHWS_PORT=10004
+# optional - tampil hanya jika service aktif (systemctl/ss)
 SLOWDNS_PORT=53,5300
 UDP_CUSTOM_PORT=1-65535
 OHP_SSH_PORT=9080
@@ -322,6 +328,8 @@ OPENVPN_UDP_PORT=25000
 OPENVPN_DNS_PORT=53
 OHP_OVPN_PORT=9088
 CONFIG_PORT=81
+ZIVPN_PORT=5667
+ZIVPN_REDIRECT=6000-19999
 PC_EOF
   chmod 644 "$ETC/config/ports.conf" 2>/dev/null || true
 fi
@@ -16682,7 +16690,7 @@ if [ -n "$MYTUNNEL_PREFIX" ]; then typed="hapus"; echo "hapus (auto test)"; else
 if [ "$typed" != "hapus" ]; then echo "Batal."; exit 0; fi
 
 echo -e "\n${CYAN}[1/7] Stop & disable service...${RESET}"
-services="xray nginx dropbear mytunnel-sshws squid mytunnel-udpgw mytunnel-ohp-ssh mytunnel-ohp-ovpn mytunnel-openvpn-tcp mytunnel-openvpn-udp mytunnel-openvpn-ssl mytunnel-slowdns udp-custom mytunnel-bot"
+services="xray nginx dropbear mytunnel-sshws squid mytunnel-udpgw mytunnel-ohp-ssh mytunnel-ohp-ovpn mytunnel-openvpn-tcp mytunnel-openvpn-udp mytunnel-openvpn-ssl slowdns mytunnel-udp-custom mytunnel-bot"
 for s in $services; do
   if [ -n "$BASE" ]; then
     rm -f "$BASE/etc/systemd/system/${s}.service.sim" "$BASE/etc/systemd/system/${s}.service" 2>/dev/null || true
@@ -16793,6 +16801,20 @@ if [ -n "$BASE" ]; then
 else
   rm -rf /etc/mytunnel 2>/dev/null || true
   rm -f /usr/local/bin/menu /usr/local/bin/mytunnel-doctor 2>/dev/null || true
+  # --- login-report (tool mandiri) ---
+  if [ -f /opt/login-report/uninstall.sh ]; then
+    echo "  hapus login-report via uninstall.sh miliknya"
+    bash /opt/login-report/uninstall.sh --yes 2>/dev/null || true
+  else
+    systemctl stop    login-report.timer  2>/dev/null || true
+    systemctl disable login-report.timer  2>/dev/null || true
+    systemctl stop    login-report.service 2>/dev/null || true
+    rm -f /etc/systemd/system/login-report.timer /etc/systemd/system/login-report.service 2>/dev/null || true
+    systemctl daemon-reload 2>/dev/null || true
+    rm -rf /opt/login-report /etc/login-report 2>/dev/null || true
+    rm -f /usr/local/bin/lreport /var/log/login-report.log 2>/dev/null || true
+  fi
+  echo "  hapus login-report (unit, /opt, /etc, log)"
   rm -f /etc/nginx/conf.d/mytunnel.conf 2>/dev/null || true
   # restore nginx default if we backed up
   if ls /etc/nginx/conf.d/mytunnel.conf.bak-* >/dev/null 2>&1; then
@@ -16836,7 +16858,6 @@ echo "  Backup pre-uninstall (jika dibuat): $REAL_BACKUP_DIR/mytunnel-pre-uninst
 echo "  Log: $LOG (sudah dihapus jika ada)"
 echo "  Untuk install ulang: bash install.sh"
 if [ -z "$BASE" ]; then echo "  Reboot disarankan jika BBR/resolver diubah."; fi
-
 __EMBED_EOF__
 chmod 755 "$ETC/uninstall.sh"
 cat > "$ETC/verify.sh" << '__EMBED_VERIFY_EOF__'
@@ -17069,8 +17090,8 @@ cat > "$F443" << '__EMBED_EOF__'
 set -euo pipefail
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
-BACKUP_BASE="/root/mytunnel-443-backup"
-BACKUP_DIR="${BACKUP_BASE}/${STAMP}"
+BACKUP_BASE="/root/nginx-backup"
+BACKUP_DIR="${BACKUP_BASE}"
 BACKUP_OFF_SUFFIX=".off"
 NGINX_CONF="/etc/nginx/nginx.conf"
 SITE_CONF="/etc/nginx/conf.d/mytunnel.conf"
@@ -17505,17 +17526,15 @@ reload_services() {
 }
 
 verify_state() {
+  # Ringkas: installer hanya butuh tahu 443 aktif atau tidak. Detail penuh di /var/log/mytunnel.log.
   [ "$DRY_RUN" -eq 1 ] && return 0
-  say ""
-  say "${CYAN}=== verifikasi ===${RESET}"
-  nginx -T 2>/dev/null | grep -E 'worker_connections|worker_rlimit_nofile' | sed 's/^/  /' || true
-  say "  port 443  : $(ss -tlnp 2>/dev/null | grep -c ':443 ' ) listener"
-  ss -tlnp 2>/dev/null | grep -E ":443 |:${STUNNEL_LEGACY_PORT} |:${NGINX_HTTP_TLS_PORT} " | sed 's/^/  /' || true
-  local cnt max
+  local n listener cnt max
+  n=$(nginx -T 2>/dev/null | grep -cE 'worker_connections|worker_rlimit_nofile')
+  listener=$(ss -tlnp 2>/dev/null | grep -c ':443 ')
   cnt=$(cat /proc/sys/net/netfilter/nf_conntrack_count 2>/dev/null || echo '?')
   max=$(cat /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null || echo '?')
-  say "  conntrack : ${cnt}/${max}"
-  systemctl is-active nginx stunnel4 2>/dev/null | sed 's/^/  /' || true
+  say "  443 ${listener} listener | worker_tuning ${n} | conntrack ${cnt}/${max}"
+  say "  nginx=$(systemctl is-active nginx 2>/dev/null) stunnel4=$(systemctl is-active stunnel4 2>/dev/null)"
 }
 
 do_rollback() {

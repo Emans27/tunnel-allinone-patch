@@ -1,3 +1,44 @@
+## v1.14.0 — 2026-11-19 — SINGLE-FILE: repo jadi 1 installer standalone
+
+### Tujuan
+Gabungkan seluruh skrip & konfigurasi repo menjadi HANYA 1 file `install.sh`
+yang 100% standalone — dijalankan sendirian tanpa git clone:
+
+```
+apt update && apt install -y wget curl && wget -O install.sh https://raw.githubusercontent.com/Emans27/tunnel-allinone-patch/main/install.sh && chmod +x install.sh && ./install.sh
+```
+
+### Audit (sebelum refactor)
+`install.sh` TERNYATA sudah 100% standalone sejak lama:
+- Bukti: di-download sendirian ke dir kosong (tanpa git clone, tanpa file lain),
+  `chmod +x install.sh && ./install.sh` rc=0, menghasilkan sendiri 18 setup +
+  9 menu + 12 fitur + 9 cron + `configure-final-443.sh` + `ports.conf`.
+- `bash -n` 80 file .sh hasil ekstraksi & `py_compile` 3 file .py SEMUA OK.
+- TIDAK ada fetch file pecahan dari repo saat runtime (3 URL repo di installer
+  hanya teks `--help`/panduan, bukan unduhan).
+
+### Yang dikoreksi (agar penghapusan file pecahan TIDAK menyebabkan regresi)
+3 blok embed di install.sh ternyata lebih TUA dari file lepas. Disinkronkan
+ke versi terbaru (identik, sha256 sama):
+- `ports.conf` embed — tambah `ZIVPN_PORT=5667` + `ZIVPN_REDIRECT=6000-19999`
+  (KRITIS: mencegah regresi ZiVPN UDP), `TLS_PORT=443,8443`
+- `uninstall.sh` embed — tambah blok cleanup login-report + nama service
+  `slowdns` / `udp-custom` yang benar (239 baris, sebelumnya 226)
+- `configure-final-443.sh` embed — `verify_state()` versi ringkas 2 baris
+- `verify.sh` embed sudah IDENTIK sejak awal (tidak diubah)
+
+### File dihapus (semua kini ter-embed penuh di install.sh)
+- `configure-final-443.sh`, `ports.conf`, `uninstall.sh`, `verify.sh`,
+  `update-login-report.sh`, `xray-guard-install.sh`
+
+### Hasil akhir repo
+Hanya 1 installer + metadata GitHub:
+`install.sh`, `README.md`, `LICENSE`, `VERSION`, `CHANGELOG.md`, `SHA256SUMS`,
+`.gitignore`, `.githooks/`.
+
+### Tidak berubah
+Tidak ada fitur, protokol, port, atau logika konfigurasi yang dihilangkan.
+
 ## v1.13.34 — 2026-11-19 — bug email acme.sh (cert self-signed)
 
 ### Gejala pasca rebuild

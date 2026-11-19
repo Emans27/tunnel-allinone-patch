@@ -59,16 +59,11 @@ _sums_check() {
         [ "$_want" = "$_have" ] || _stale+=("$_f")
     done <<'SUMSEOF'
 install.sh
-uninstall.sh
+README.md
+LICENSE
 VERSION
 CHANGELOG.md
-README.md
-ports.conf
-configure-final-443.sh
-LICENSE
-verify.sh
-update-login-report.sh
-xray-guard-install.sh
+
 SUMSEOF
     [ ${#_stale[@]} -eq 0 ] || report "SHA256SUMS basi: ${_stale[*]}"
 }
