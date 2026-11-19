@@ -1,3 +1,47 @@
+## v1.13.19 — 2026-11-19 — Audit menu SSH/VMESS/VLESS/TROJAN + guard EOF
+
+Audit fungsional seluruh opsi menu protokol (SSH 13, VMESS 12, VLESS 12, TROJAN 12).
+
+### Hasil
+| Menu | Opsi | Status |
+|---|---|---|
+| SSH | Create, Trial, Delete, Renew, Modify Password, Check Login, List, Lock, Unlock, Check Config, Recovery, Edit Limit IP, Edit Limit IP All | 13/13 OK |
+| VMESS | semua 12 | 12/12 OK |
+| VLESS | semua 12 | 12/12 OK |
+| TROJAN | semua 12 | 12/12 OK |
+
+Tidak ada error shell (`command not found` / `syntax error` / `Permission denied`
+/ `No such file` / `grep: awk: jq:`). Setiap Create/Delete diverifikasi benar-benar
+menulis ke db akun **dan** menambah/menghapus client di `/usr/local/etc/xray/config.json`,
+dengan `xray -test` tetap `Configuration OK` setiap langkah. Lock menghapus client dari
+config (dibuat kembali oleh Unlock). Renew mengubah kolom exp db + `chage -E` user sistem.
+Modify UUID/Password mengganti client di config dan menjaga db & config sinkron.
+
+### Bug yang ditemukan & diperbaiki: loop infinite saat stdin EOF
+Loop validasi input di semua protokol tidak punya guard EOF. Saat `read` gagal (stdin
+habis), `continue` berulang tanpa henti:
+
+- `do_create` / `do_create_custom` — loop Username: 337 KB output `Username kosong`
+- `do_create_custom` TROJAN — loop Password: **1.029.172 baris** sampai timeout
+
+Diperbaiki di 4 menu (semua loop input):
+```
+read -r user   || { echo dibatalkan; return 2; }   # Username wajib
+read -r id     || { echo dibatalkan; return 2; }   # UUID/Password custom wajib
+read -r days   || { days=30; break; }              # default 30
+read -r quota  || { quota=0; break; }              # default Unlimited
+read -r limit_ip || { limit_ip=0; break; }         # default no-limit
+```
+Wajib (username, UUID, password) membatalkan pembuatan; yang punya default justru
+mengambil default dan keluar loop.
+
+### Verifikasi live
+```
+opsi 2 (Custom) tiap menu saat EOF: 58 baris (sebelumnya 337 KB / 1.029.172 baris)
+```
+Semua user uji (`uji_vl`, `uji_tr`, `uji_tr2`) dihapus dari db, config xray (12 -> 9
+client), dan `/etc/passwd`; `xray -test` OK dan service `active`.
+
 ## v1.13.18 — 2026-11-19 — Fix: traffic lama tetap dihitung "user aktif"
 
 ### Gejala

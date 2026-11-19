@@ -2564,7 +2564,9 @@ do_create() {
   local user pass limit_ip days
   while true; do
     printf "${CYAN}%-14s: ${RESET}" "Username"
-    read -r user
+    # guard EOF: stdin habis saat validasi username -> jangan `continue` (loop tak
+    # berujung menghabiskan CPU & output). Batalkan pembuatan akun.
+    read -r user || { echo -e "${RED}Dibatalkan${RESET}"; return 2; }
     user=$(echo "$user" | tr -d ' \n' | tr '[:upper:]' '[:lower:]')
     if [ -z "$user" ]; then echo -e "${RED}Username tidak boleh kosong${RESET}"; continue; fi
     if ! grep -qE '^[a-z0-9_]{3,16}$' <<< "$user" 2>/dev/null; then
@@ -2585,14 +2587,14 @@ do_create() {
   fi
   while true; do
     printf "${CYAN}%-14s: ${RESET}" "Limit (IP)"
-    read -r limit_ip
+    read -r limit_ip || { limit_ip=0; break; }
     [ -z "$limit_ip" ] && limit_ip=0
     if [[ "$limit_ip" =~ ^[0-9]+$ ]]; then break; fi
     echo -e "${RED}Limit harus angka (0=unlimited)${RESET}"
   done
   while true; do
     printf "${CYAN}%-14s: ${RESET}" "Expired (day)"
-    read -r days
+    read -r days || { days=30; break; }
     [ -z "$days" ] && days=30
     if [[ "$days" =~ ^[0-9]+$ ]] && [ "$days" -ge 1 ] && [ "$days" -le 3650 ]; then break; fi
     echo -e "${RED}Hari harus angka 1-3650${RESET}"
@@ -3107,7 +3109,9 @@ do_create() {
   local user quota limit_ip days id
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Username"
-    read -r user
+    # guard EOF: stdin habis saat validasi username -> jangan `continue` (loop tak
+    # berujung menghabiskan CPU & output). Batalkan pembuatan akun.
+    read -r user || { echo -e "${RED}Dibatalkan${RESET}"; return 2; }
     user=$(echo "$user" | tr -d ' \n' | tr '[:upper:]' '[:lower:]')
     if [ -z "$user" ]; then echo -e "${RED}Username tidak boleh kosong${RESET}"; continue; fi
     if ! grep -qE '^[a-z0-9_]{3,16}$' <<< "$user" 2>/dev/null; then
@@ -3119,21 +3123,21 @@ do_create() {
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Quota Limit (GB)"
-    read -r quota
+    read -r quota || { echo "0"; quota=0; break; }
     [ -z "$quota" ] && quota=0
     if [[ "$quota" =~ ^[0-9]+$ ]] && [ "$quota" -ge 0 ] && [ "$quota" -le 9999 ]; then break; fi
     echo -e "${RED}Quota harus angka 0-9999 (0=Unlimited)${RESET}"
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Limit (IP)"
-    read -r limit_ip
+    read -r limit_ip || { limit_ip=0; break; }
     [ -z "$limit_ip" ] && limit_ip=0
     if [[ "$limit_ip" =~ ^[0-9]+$ ]] && [ "$limit_ip" -ge 0 ] && [ "$limit_ip" -le 100 ]; then break; fi
     echo -e "${RED}Limit harus angka 0-100 (0=No Limit)${RESET}"
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Expired (days)"
-    read -r days
+    read -r days || { days=30; break; }
     [ -z "$days" ] && days=30
     if [[ "$days" =~ ^[0-9]+$ ]] && [ "$days" -ge 1 ] && [ "$days" -le 3650 ]; then break; fi
     echo -e "${RED}Hari harus angka 1-3650${RESET}"
@@ -3168,7 +3172,9 @@ do_create_custom() {
   local user quota limit_ip days id
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Username"
-    read -r user
+    # guard EOF: stdin habis saat validasi username -> jangan `continue` (loop tak
+    # berujung menghabiskan CPU & output). Batalkan pembuatan akun.
+    read -r user || { echo -e "${RED}Dibatalkan${RESET}"; return 2; }
     user=$(echo "$user" | tr -d ' \n' | tr '[:upper:]' '[:lower:]')
     if [ -z "$user" ]; then echo -e "${RED}Username kosong${RESET}"; continue; fi
     if ! grep -qE '^[a-z0-9_]{3,16}$' <<< "$user" 2>/dev/null; then echo -e "${RED}Username a-z0-9 3-16${RESET}"; continue; fi
@@ -3178,28 +3184,28 @@ do_create_custom() {
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "UUID"
-    read -r id
+    read -r id || { echo -e "${RED}Dibatalkan${RESET}"; return 2; }
     if [ -z "$id" ]; then echo -e "${RED}UUID tidak boleh kosong${RESET}"; continue; fi
     if ! validate_uuid "$id" 2>/dev/null; then echo -e "${RED}UUID tidak valid (format 8-4-4-4-12 hex)${RESET}"; continue; fi
     break
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Quota Limit (GB)"
-    read -r quota
+    read -r quota || { echo "0"; quota=0; break; }
     [ -z "$quota" ] && quota=0
     if [[ "$quota" =~ ^[0-9]+$ ]] && [ "$quota" -ge 0 ] && [ "$quota" -le 9999 ]; then break; fi
     echo -e "${RED}Quota harus angka 0-9999${RESET}"
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Limit (IP)"
-    read -r limit_ip
+    read -r limit_ip || { limit_ip=0; break; }
     [ -z "$limit_ip" ] && limit_ip=0
     if [[ "$limit_ip" =~ ^[0-9]+$ ]] && [ "$limit_ip" -ge 0 ] && [ "$limit_ip" -le 100 ]; then break; fi
     echo -e "${RED}Limit harus angka 0-100${RESET}"
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Expired (days)"
-    read -r days
+    read -r days || { days=30; break; }
     [ -z "$days" ] && days=30
     if [[ "$days" =~ ^[0-9]+$ ]] && [ "$days" -ge 1 ] && [ "$days" -le 3650 ]; then break; fi
     echo -e "${RED}Hari harus angka 1-3650${RESET}"
@@ -3673,7 +3679,9 @@ do_create() {
   local user quota limit_ip days id
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Username"
-    read -r user
+    # guard EOF: stdin habis saat validasi username -> jangan `continue` (loop tak
+    # berujung menghabiskan CPU & output). Batalkan pembuatan akun.
+    read -r user || { echo -e "${RED}Dibatalkan${RESET}"; return 2; }
     user=$(echo "$user" | tr -d ' \n' | tr '[:upper:]' '[:lower:]')
     if [ -z "$user" ]; then echo -e "${RED}Username tidak boleh kosong${RESET}"; continue; fi
     if ! grep -qE '^[a-z0-9_]{3,16}$' <<< "$user" 2>/dev/null; then
@@ -3685,21 +3693,21 @@ do_create() {
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Quota Limit (GB)"
-    read -r quota
+    read -r quota || { echo "0"; quota=0; break; }
     [ -z "$quota" ] && quota=0
     if [[ "$quota" =~ ^[0-9]+$ ]] && [ "$quota" -ge 0 ] && [ "$quota" -le 9999 ]; then break; fi
     echo -e "${RED}Quota harus angka 0-9999 (0=Unlimited)${RESET}"
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Limit (IP)"
-    read -r limit_ip
+    read -r limit_ip || { limit_ip=0; break; }
     [ -z "$limit_ip" ] && limit_ip=0
     if [[ "$limit_ip" =~ ^[0-9]+$ ]] && [ "$limit_ip" -ge 0 ] && [ "$limit_ip" -le 100 ]; then break; fi
     echo -e "${RED}Limit harus angka 0-100 (0=No Limit)${RESET}"
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Expired (days)"
-    read -r days
+    read -r days || { days=30; break; }
     [ -z "$days" ] && days=30
     if [[ "$days" =~ ^[0-9]+$ ]] && [ "$days" -ge 1 ] && [ "$days" -le 3650 ]; then break; fi
     echo -e "${RED}Hari harus angka 1-3650${RESET}"
@@ -3734,7 +3742,9 @@ do_create_custom() {
   local user quota limit_ip days id
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Username"
-    read -r user
+    # guard EOF: stdin habis saat validasi username -> jangan `continue` (loop tak
+    # berujung menghabiskan CPU & output). Batalkan pembuatan akun.
+    read -r user || { echo -e "${RED}Dibatalkan${RESET}"; return 2; }
     user=$(echo "$user" | tr -d ' \n' | tr '[:upper:]' '[:lower:]')
     if [ -z "$user" ]; then echo -e "${RED}Username kosong${RESET}"; continue; fi
     if ! grep -qE '^[a-z0-9_]{3,16}$' <<< "$user" 2>/dev/null; then echo -e "${RED}Username a-z0-9 3-16${RESET}"; continue; fi
@@ -3744,28 +3754,28 @@ do_create_custom() {
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "UUID"
-    read -r id
+    read -r id || { echo -e "${RED}Dibatalkan${RESET}"; return 2; }
     if [ -z "$id" ]; then echo -e "${RED}UUID tidak boleh kosong${RESET}"; continue; fi
     if ! validate_uuid "$id" 2>/dev/null; then echo -e "${RED}UUID tidak valid (format 8-4-4-4-12 hex)${RESET}"; continue; fi
     break
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Quota Limit (GB)"
-    read -r quota
+    read -r quota || { echo "0"; quota=0; break; }
     [ -z "$quota" ] && quota=0
     if [[ "$quota" =~ ^[0-9]+$ ]] && [ "$quota" -ge 0 ] && [ "$quota" -le 9999 ]; then break; fi
     echo -e "${RED}Quota harus angka 0-9999${RESET}"
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Limit (IP)"
-    read -r limit_ip
+    read -r limit_ip || { limit_ip=0; break; }
     [ -z "$limit_ip" ] && limit_ip=0
     if [[ "$limit_ip" =~ ^[0-9]+$ ]] && [ "$limit_ip" -ge 0 ] && [ "$limit_ip" -le 100 ]; then break; fi
     echo -e "${RED}Limit harus angka 0-100${RESET}"
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Expired (days)"
-    read -r days
+    read -r days || { days=30; break; }
     [ -z "$days" ] && days=30
     if [[ "$days" =~ ^[0-9]+$ ]] && [ "$days" -ge 1 ] && [ "$days" -le 3650 ]; then break; fi
     echo -e "${RED}Hari harus angka 1-3650${RESET}"
@@ -4239,7 +4249,9 @@ do_create() {
   local user quota limit_ip days id
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Username"
-    read -r user
+    # guard EOF: stdin habis saat validasi username -> jangan `continue` (loop tak
+    # berujung menghabiskan CPU & output). Batalkan pembuatan akun.
+    read -r user || { echo -e "${RED}Dibatalkan${RESET}"; return 2; }
     user=$(echo "$user" | tr -d ' \n' | tr '[:upper:]' '[:lower:]')
     if [ -z "$user" ]; then echo -e "${RED}Username tidak boleh kosong${RESET}"; continue; fi
     if ! grep -qE '^[a-z0-9_]{3,16}$' <<< "$user" 2>/dev/null; then
@@ -4251,21 +4263,21 @@ do_create() {
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Quota Limit (GB)"
-    read -r quota
+    read -r quota || { echo "0"; quota=0; break; }
     [ -z "$quota" ] && quota=0
     if [[ "$quota" =~ ^[0-9]+$ ]] && [ "$quota" -ge 0 ] && [ "$quota" -le 9999 ]; then break; fi
     echo -e "${RED}Quota harus angka 0-9999 (0=Unlimited)${RESET}"
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Limit (IP)"
-    read -r limit_ip
+    read -r limit_ip || { limit_ip=0; break; }
     [ -z "$limit_ip" ] && limit_ip=0
     if [[ "$limit_ip" =~ ^[0-9]+$ ]] && [ "$limit_ip" -ge 0 ] && [ "$limit_ip" -le 100 ]; then break; fi
     echo -e "${RED}Limit harus angka 0-100 (0=No Limit)${RESET}"
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Expired (days)"
-    read -r days
+    read -r days || { days=30; break; }
     [ -z "$days" ] && days=30
     if [[ "$days" =~ ^[0-9]+$ ]] && [ "$days" -ge 1 ] && [ "$days" -le 3650 ]; then break; fi
     echo -e "${RED}Hari harus angka 1-3650${RESET}"
@@ -4300,7 +4312,9 @@ do_create_custom() {
   local user quota limit_ip days id
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Username"
-    read -r user
+    # guard EOF: stdin habis saat validasi username -> jangan `continue` (loop tak
+    # berujung menghabiskan CPU & output). Batalkan pembuatan akun.
+    read -r user || { echo -e "${RED}Dibatalkan${RESET}"; return 2; }
     user=$(echo "$user" | tr -d ' \n' | tr '[:upper:]' '[:lower:]')
     if [ -z "$user" ]; then echo -e "${RED}Username kosong${RESET}"; continue; fi
     if ! grep -qE '^[a-z0-9_]{3,16}$' <<< "$user" 2>/dev/null; then echo -e "${RED}Username a-z0-9 3-16${RESET}"; continue; fi
@@ -4310,28 +4324,28 @@ do_create_custom() {
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Password"
-    read -r id
+    read -r id || { echo -e "${RED}Dibatalkan${RESET}"; return 2; }
     if [ -z "$id" ]; then echo -e "${RED}Password tidak boleh kosong${RESET}"; continue; fi
     if [ "${#id}" -lt 4 ]; then echo -e "${RED}Password minimal 4 karakter${RESET}"; continue; fi
     break
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Quota Limit (GB)"
-    read -r quota
+    read -r quota || { echo "0"; quota=0; break; }
     [ -z "$quota" ] && quota=0
     if [[ "$quota" =~ ^[0-9]+$ ]] && [ "$quota" -ge 0 ] && [ "$quota" -le 9999 ]; then break; fi
     echo -e "${RED}Quota harus angka 0-9999${RESET}"
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Limit (IP)"
-    read -r limit_ip
+    read -r limit_ip || { limit_ip=0; break; }
     [ -z "$limit_ip" ] && limit_ip=0
     if [[ "$limit_ip" =~ ^[0-9]+$ ]] && [ "$limit_ip" -ge 0 ] && [ "$limit_ip" -le 100 ]; then break; fi
     echo -e "${RED}Limit harus angka 0-100${RESET}"
   done
   while true; do
     printf "${CYAN}%-18s: ${RESET}" "Expired (days)"
-    read -r days
+    read -r days || { days=30; break; }
     [ -z "$days" ] && days=30
     if [[ "$days" =~ ^[0-9]+$ ]] && [ "$days" -ge 1 ] && [ "$days" -le 3650 ]; then break; fi
     echo -e "${RED}Hari harus angka 1-3650${RESET}"
