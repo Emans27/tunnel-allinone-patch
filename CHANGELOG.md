@@ -1,3 +1,40 @@
+## v1.13.27 — 2026-11-19 — CRITICAL: blok setup/sshws.sh rusak
+
+### Gejala pasca v1.13.26
+Rebuild menghasilkan:
+```
+[11/13] Setup SSH-WS...
+/etc/mytunnel/setup/sshws.sh: line 2: import: command not found
+/etc/mytunnel/setup/sshws.sh: line 8: syntax error near unexpected token ('
+/etc/mytunnel/setup/sshws.sh: line 8: def log(msg):'
+✗ Setup SSH-WS gagal
+```
+Instalasi berhenti; semua layanan `inactive`.
+
+### Akar
+Patch sinkronisasi v1.13.26 menimpa BLOK `setup/sshws.sh` (wrapper bash) dengan
+ISI Python langsung. Penyebab: saat mencari penutup blok, patch memakai
+`__EMBED_EOF__` tetapi blok wrapper mengandung `PY_EOF` di dalamnya — posisi
+`find()` salah sehingga blok terganti dari shebang `#!/bin/bash` menjadi
+`#!/usr/bin/env python3`. Akibatnya installer menjalankan Python sebagai Bash
+(`import: command not found`).
+
+### Perbaikan
+- Kembalikan blok `setup/sshws.sh` = wrapper bash (shebang `#!/bin/bash`) dari v1.13.25
+- Tanam fix RAWMODE (HC PATCH = raw tunnel, GET WS = framing) ke dalam `PY_EOF` block
+- `setup/sshws.sh` tetap wrapper bash; `.py` ditulis ke `mytunnel-sshws.py`
+- Unit service `ExecStart=/usr/bin/python3 $PY_BIN` (tidak berubah)
+- Validasi: `bash -n install.sh` OK, blok .py compile OK
+
+### Bukti blok installer
+```
+shebang: #!/bin/bash
+RAWMODE: True
+ws_encode: True
+_method: True
+py blok: 5794 byte, compile OK
+```
+
 ## v1.13.26 — 2026-11-19 — SSH WS: HTTP Custom PATCH mode
 
 ### Gejala pasca v1.13.25
