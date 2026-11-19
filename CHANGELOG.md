@@ -1,3 +1,34 @@
+## v1.13.25 — 2026-11-19 — Perbaiki ZiVPN & SSH WS timeout
+
+### 1. ZiVPN `connect timeout`
+DNAT UDP-Custom (1-65535 → :36712) mencakup port **5667** (bukan range
+6000-19999, tapi langsung 5667 dan 5301-7099). Paket klien ZiVPN dibajak ke
+udp-custom sebelum mencapai ZiVPN — ZiVPN tidak pernah menerima koneksi.
+
+Fix:
+- `ACCEPT 5667/udp` di nat PREROUTING baris 1 (sebelum semua DNAT)
+- `REDIRECT 6000-19999 -> 5667` di baris 2
+- `EXCLUDE_PORTS` udp-custom ditambah `5667,6000-19999` agar upgrade berikutnya
+  tidak mengulang bentrok
+
+Bukti: counter `INPUT dpts:6000:19999` naik dari 0 → 183 paket dalam beberapa
+menit; ufw sudah menyimpan `5667/udp` + `6000-19999/udp` di `user.rules`.
+
+### 2. SSH WS timeout
+`mytunnel-sshws.py` mengirim banner Dropbear **554 byte raw** ke socket WS
+tanpa framing (bukti `strace`), sementara klien WS membaca `SS` (2 byte pertama)
+sebagai frame header — sisa `H-2.0-...` jadi payload, `kex_exchange_identification`
+gagal: banner line contains invalid characters.
+
+Fix `mytunnel-sshws.py`:
+- `ws_encode()`: bungkus payload server→klien dengan frame WS `0x82` (binary, unmasked)
+- `ws_decode()`: buka frame mask dari klien sebelum meneruskan ke Dropbear
+- header HTTP + leftover byte banner disimpan dan diteruskan utuh
+- hapus filter c2s yang membuang byte awal
+
+Bukti: banner kini utuh `SSH-2.0-dropbear_2019.78`; Dropbear mencatat
+`Password auth succeeded for 'eman'` lewat port 8080.
+
 ## v1.13.24 — 2026-11-19 — ZiVPN tahan reboot: iptables dipasang ulang saat start
 
 ### Gejala

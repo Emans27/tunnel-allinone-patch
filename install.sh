@@ -7811,7 +7811,7 @@ UDP_CUSTOM_BIN="${BASE}/usr/local/bin/udp-custom"
 SERVICE="udp-custom"
 LISTEN_PORT="${UDP_CUSTOM_LISTEN:-36712}"
 # port yang TIDAK boleh dialihkan (dipakai layanan lain di server ini)
-EXCLUDE_PORTS="22,444,90,80,443,53,5300,81,8080,8443,2082,2083,8880,3128,7100,9080,9088,1194,442,25000,7300"
+EXCLUDE_PORTS="22,444,90,80,443,53,5300,81,8080,8443,2082,2083,8880,3128,7100,9080,9088,1194,442,25000,7300,5667,6000-19999"
 
 _get_ports(){
   # shellcheck disable=SC1090
@@ -9025,7 +9025,7 @@ write_proxy() {
   mkdir -p "$(dirname "$PY_BIN")" 2>/dev/null || true
   cat > "$PY_BIN" << 'PY_EOF'
 #!/usr/bin/env python3
-import socket, threading, hashlib, base64, re, time, os
+import socket, threading, hashlib, base64, re, time, os, struct
 LISTEN_HOST="127.0.0.1"
 LISTEN_PORT=10004
 SSH_HOST="127.0.0.1"
@@ -9045,6 +9045,7 @@ def recvall(sock, n):
     return buf
 def handle_client(conn, addr):
     conn.settimeout(8)
+    leftover=b""
     try:
         data=b""
         while b"\r\n\r\n" not in data:
@@ -9055,31 +9056,25 @@ def handle_client(conn, addr):
         if not data:
             log(f"{addr} no data")
             conn.close(); return
-        txt=data.decode(errors="ignore")
-        # log first line for debug
-        first=txt.splitlines()[0] if txt else ""
-        log(f"{addr} {first} len={len(data)} has_upgrade={'upgrade: websocket' in txt.lower()}")
-        # wajib ada Upgrade: websocket (method apa pun termasuk PATCH)
+        idx=data.find(b"\r\n\r\n")
+        header=data[:idx]
+        leftover=data[idx+4:]
+        txt=header.decode(errors="ignore")
+        log(f"{addr} {txt.splitlines()[0] if txt else ''} len={len(data)} upgrade={'upgrade: websocket' in txt.lower()}")
         if "upgrade: websocket" not in txt.lower():
-            # bukan WS, coba raw pipe langsung ke SSH (untuk nginx raw fallback)
-            log(f"{addr} no upgrade header -> raw fallback")
-            # but still need to forward data already read? No, this is WS-only proxy
-            # close
+            log(f"{addr} no upgrade header -> close")
             conn.close(); return
-        # buat Sec-WebSocket-Accept (pakai dummy jika tidak ada key — HC PATCH kadang tanpa key)
         m=re.search(r"Sec-WebSocket-Key:\s*(.+)\r\n", txt, re.I)
         key=m.group(1).strip() if m else "dGhlIHNhbXBsZSBub25jZQ=="
-        if not m: log(f"{addr} dummy key")
         accept=base64.b64encode(hashlib.sha1((key+"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
         resp=f"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
         conn.sendall(resp.encode())
-        log(f"{addr} 101 sent")
+        log(f"{addr} 101 sent leftover={len(leftover)}")
     except Exception as e:
         log(f"{addr} handshake exc {e}")
         try: conn.close()
         except: pass
         return
-    # connect ke sshd/dropbear
     try:
         ssh=socket.create_connection((SSH_HOST, SSH_PORT), timeout=5)
         ssh.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY,1)
@@ -9092,34 +9087,53 @@ def handle_client(conn, addr):
                 _s.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 8)
             except: pass
         conn.settimeout(None); ssh.settimeout(None)
-        log(f"{addr} ssh connected {SSH_HOST}:{SSH_PORT}")
+        # kirim byte banner yang terlanjur dibaca saat membaca header HTTP
+        if leftover:
+            ssh.sendall(leftover)
+        log(f"{addr} ssh connected {SSH_HOST}:{SSH_PORT} left={len(leftover)}")
     except Exception as e:
         log(f"{addr} ssh connect fail {e}")
         try: conn.close()
         except: pass
         return
-    # JANGAN teruskan sisa buffer ke SSH — header HTTP bukan data SSH
-    # (meneruskan sisa menyebabkan sshd dapat "Illegal packet size" di KEX)
+    def ws_encode(payload):
+        # server->client WAJIB frame WS: FIN+binary (0x82), tanpa mask
+        ln=len(payload)
+        if ln<126: hdr=struct.pack("!BB",0x82,ln)
+        elif ln<65536: hdr=struct.pack("!BBH",0x82,126,ln)
+        else: hdr=struct.pack("!BBQ",0x82,127,ln)
+        return hdr+payload
+    def ws_decode(data):
+        # client->server frame: opcode byte 0, len byte 1 (bit 0x80 = masked)
+        if len(data)<2: return None
+        op=data[0]&0x0f
+        ln=data[1]&0x7f; off=2
+        if ln==126:
+            if len(data)<4: return None
+            ln=struct.unpack("!H",data[2:4])[0]; off=4
+        elif ln==127:
+            if len(data)<10: return None
+            ln=struct.unpack("!Q",data[2:10])[0]; off=10
+        if data[1]&0x80:
+            mk=data[off:off+4]; off+=4
+            payload=data[off:off+ln]
+            if len(payload)<ln: return None
+            return bytes(b^mk[i%4] for i,b in enumerate(payload))
+        payload=data[off:off+ln]
+        return payload if len(payload)==ln else None
     def pipe(a,b, name):
-        first=True
         try:
             while True:
                 d=a.recv(8192)
                 if not d: break
-                if first and name=="c2s":
-                    first=False
-                    if d.startswith(b"HTTP/") or d.startswith(b"GET ") or d.startswith(b"PATCH "):
-                        stripped=d.lstrip()
-                        if stripped.startswith(b"HTTP/"):
-                            log(f"{addr} c2s discard HTTP split {d[:40]!r}")
-                            continue
-                        if b"\r\n\r\n" in d and (d[:10].strip().startswith(b"HTTP/") or b"Host:" in d[:200]):
-                            log(f"{addr} c2s discard pipelined HTTP {d[:60]!r}")
-                            continue
-                if name=="s2c" and d.startswith(b"Invalid SSH"):
-                    log(f"{addr} s2c discard Invalid SSH {d[:40]!r}")
-                    continue
-                b.sendall(d)
+                if name=="s2c":
+                    b.sendall(ws_encode(d))
+                else:
+                    if len(d)>=2 and (d[0]&0x0f) in (1,2,0):
+                        payload=ws_decode(d)
+                        if payload is not None:
+                            b.sendall(payload); continue
+                    b.sendall(d)
         except Exception as e:
             log(f"{name} exc {e}")
         finally:
