@@ -22,9 +22,18 @@ NO_DEPS=0
 _log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG" 2>/dev/null || true; }
 # Jalankan skrip setup sambil streaming ke log, tapi kembalikan exit code SKRIP.
 # `bash x.sh | tee` selalu 0 (kode tee), jadi kegagalan tidak pernah terdeteksi.
+# Output detail tiap setup script -> LOG saja (terminal tak banjir).
+# Terminal hanya tampil 1 baris ringkasan ("[nama] Selesai") bila ada.
+# STDERR tetap lewat ke terminal supaya error tak pernah tersembunyi.
 _mt_step() {
-  "$@" 2>&1 | tee -a "$LOG" 2>/dev/null
-  return "${PIPESTATUS[0]}"
+  local _rc=0 _out
+  _out=$("$@" 2>/dev/null)
+  _rc=$?
+  printf '%s\n' "$_out" >> "$LOG" 2>/dev/null || true
+  local _sum
+  _sum=$(printf '%s\n' "$_out" | grep -E '\] Selesai$' | tail -1)
+  [ -n "$_sum" ] && echo -e "  ${GREEN}✓ ${_sum}${RESET}"
+  return "$_rc"
 }
 _fail() {
   echo -e "${RED}✗ $1${RESET}" | tee -a "$LOG" 2>/dev/null || true
@@ -15671,7 +15680,7 @@ if [ -z "$_mt_version" ]; then
   _mt_version=$(printf '%s' "${0:-}" | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1)
   [ -n "$_mt_version" ] && case "$_mt_version" in v*) ;; *) _mt_version="v$_mt_version";; esac
 fi
-[ -z "$_mt_version" ] && _mt_version="v1.13.31"
+[ -z "$_mt_version" ] && _mt_version="v1.13.32"
 printf '%s\n' "$_mt_version" > "$ETC/config/version.txt"
 chmod 644 "$ETC/config/version.txt"
 cat > "$ETC/config/repo.txt" << '__EMBED_EOF__'
@@ -17641,7 +17650,8 @@ for _c in "${BASE:+$BASE/}configure-final-443.sh" "/root/configure-final-443.sh"
 done
 if [ -n "$_f443" ]; then
   chmod 755 "$_f443" 2>/dev/null || true
-  if bash "$_f443" 2>&1 | tee -a "$LOG" | tail -n 20; then
+  if bash "$_f443" > >(tee -a "$LOG" >/dev/null) 2>&1; then
+    echo -e "  ${GREEN}✓ final 443 (nginx stream) aktif${RESET}"
     _log "final-443 ok"
   else
     echo -e "${YELLOW}Setup final 443 gagal (cek manual: bash $_f443)${RESET}" | tee -a "$LOG" 2>/dev/null || true
@@ -17668,7 +17678,7 @@ if [ -z "$BASE" ]; then
   # 80 juga harus listen (httpmux)
   if ! ss -tln 2>/dev/null | grep -q ':80 '; then
     echo -e "${YELLOW}! 80 belum listen, jalankan ulang httpmux${RESET}" | tee -a "$LOG" 2>/dev/null || true
-    bash "$ETC/setup/httpmux.sh" install 2>&1 | tee -a "$LOG" | tail -n 5 || true
+    bash "$ETC/setup/httpmux.sh" install > >(tee -a "$LOG" >/dev/null) 2>&1 || true
     ufw allow 80/tcp >/dev/null 2>&1 || true
     sleep 2
     ss -tln 2>/dev/null | grep -q ':80 ' && { echo -e "${GREEN}✓ 80 aktif${RESET}" | tee -a "$LOG" 2>/dev/null || true; _log "port 80 verified"; }
@@ -17679,10 +17689,7 @@ fi
 
 echo -e "${CYAN}[10/13] Setup Dropbear...${RESET}"
 _log "[10/13] dropbear"
-bash "$ETC/setup/dropbear.sh" 2>&1 | tee -a "$LOG"
-# PENTING: tanpa PIPESTATUS, status pipeline = exit `tee` (selalu 0) sehingga
-# kegagalan setup tidak pernah terdeteksi dan installer lanjut "selesai".
-if [ "${PIPESTATUS[0]}" != "0" ]; then
+if ! _mt_step bash "$ETC/setup/dropbear.sh"; then
   _fail "Setup Dropbear gagal" "Cek $ETC/setup/dropbear.sh dan $LOG"
 fi
 

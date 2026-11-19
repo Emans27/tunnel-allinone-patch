@@ -1,3 +1,28 @@
+## v1.13.32 — 2026-11-19 — bersihkan output instalasi
+
+### Keluhan
+Saat install, terminal banjir output teknis yang tak perlu.
+
+### Akar
+`_mt_step()` streaming SELURUH output setup script (`tee`) ke terminal, termasuk
+dump `ss -tlnp`, `sysctl`, `ufw allow` per-port, pesan `[TEST MODE]`, `skip/sudah`,
+Xray banner, dsb.
+
+### Perbaikan
+- `_mt_step()`: output detail -> LOG saja (`>> "$LOG"`); terminal hanya 1 baris
+  ringkasan `✓ [nama] Selesai` (diambil dari baris `] Selesai$` output). STDERR
+  tetap lewat ke terminal supaya error tak tersembunyi.
+- step Dropbear: samakan dgn `_mt_step` (dulu `| tee` manual, exit via PIPESTATUS)
+- step final-443 (`configure-final-443.sh`): output ke log, terminal `✓ final 443 aktif`
+- `verify_state()` di `configure-final-443.sh`: dari 9 baris dump (`worker_connections`,
+  tiap LISTEN, tiap status service) jadi 2 baris ringkas
+- httpmux fallback: output ke log, tanpa `tail -n 5`
+
+### Hasil dry-run
+Output terminal install: **210 -> 106 baris**. Terminal kini: preflight, `[N/13] ...`,
+1 baris ringkasan per setup, ringkasan akhir + panduan pasca-install.
+Detail penuh tetap di `/var/log/mytunnel.log`.
+
 ## v1.13.31 — 2026-11-19 — LOCK: anti-disconnect tahan rebuild
 
 ### Tujuan

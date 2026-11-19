@@ -456,17 +456,15 @@ reload_services() {
 }
 
 verify_state() {
+  # Ringkas: installer hanya butuh tahu 443 aktif atau tidak. Detail penuh di /var/log/mytunnel.log.
   [ "$DRY_RUN" -eq 1 ] && return 0
-  say ""
-  say "${CYAN}=== verifikasi ===${RESET}"
-  nginx -T 2>/dev/null | grep -E 'worker_connections|worker_rlimit_nofile' | sed 's/^/  /' || true
-  say "  port 443  : $(ss -tlnp 2>/dev/null | grep -c ':443 ' ) listener"
-  ss -tlnp 2>/dev/null | grep -E ":443 |:${STUNNEL_LEGACY_PORT} |:${NGINX_HTTP_TLS_PORT} " | sed 's/^/  /' || true
-  local cnt max
+  local n listener cnt max
+  n=$(nginx -T 2>/dev/null | grep -cE 'worker_connections|worker_rlimit_nofile')
+  listener=$(ss -tlnp 2>/dev/null | grep -c ':443 ')
   cnt=$(cat /proc/sys/net/netfilter/nf_conntrack_count 2>/dev/null || echo '?')
   max=$(cat /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null || echo '?')
-  say "  conntrack : ${cnt}/${max}"
-  systemctl is-active nginx stunnel4 2>/dev/null | sed 's/^/  /' || true
+  say "  443 ${listener} listener | worker_tuning ${n} | conntrack ${cnt}/${max}"
+  say "  nginx=$(systemctl is-active nginx 2>/dev/null) stunnel4=$(systemctl is-active stunnel4 2>/dev/null)"
 }
 
 do_rollback() {
