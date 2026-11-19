@@ -15372,60 +15372,87 @@ render_login_dashboard(){
   expiry=$(get_expiry 2>/dev/null || echo "-")
   orderby=$(get_brand 2>/dev/null || echo "SUNEK VPN")
 
-  # === RENDER (60 kolom) ===
-  # brand header centered
-  draw_box "$brand" 60
+  # === RENDER — semua baris di dalam kotak 60 kolom ===
+  # _box_* dari lib/helpers.sh; kalau lib tak ada, definisi lokal di bawah dipakai
+  if ! command -v _box_top >/dev/null 2>&1; then
+    BOX_W=58
+    _box_top(){ printf "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}\n"; }
+    _box_mid(){ printf "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}\n"; }
+    _box_bottom(){ printf "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}\n"; }
+    center_in_box(){
+      local t="${1:-}" c="${2:-${BOLD}}" n p l r
+      n=${#t}; [ "$n" -gt 58 ] && { t="${t:0:58}"; n=58; }
+      l=$(( (58-n)/2 )); r=$(( 58-n-l ))
+      printf "${BLUE}│${RESET}%*s${c}%s${RESET}%*s${BLUE}│${RESET}\n" "$l" "" "$t" "$r" ""
+    }
+  fi
+  BOX_W=${BOX_W:-58}
 
-  # system info box
-  echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} ${CYAN}%-10s${RESET}: %-44s ${BLUE}│${RESET}\n" "OS" "$os"
-  printf "${BLUE}│${RESET} ${CYAN}%-10s${RESET}: %-10s ${CYAN}%-6s${RESET}: %-25s ${BLUE}│${RESET}\n" "RAM" "$ram" "SWAP" "$swap"
-  printf "${BLUE}│${RESET} ${CYAN}%-10s${RESET}: %-44s ${BLUE}│${RESET}\n" "CITY" "$city"
-  printf "${BLUE}│${RESET} ${CYAN}%-10s${RESET}: %-44s ${BLUE}│${RESET}\n" "ISP" "$isp"
-  printf "${BLUE}│${RESET} ${CYAN}%-10s${RESET}: %-44s ${BLUE}│${RESET}\n" "IP" "$ip"
-  printf "${BLUE}│${RESET} ${CYAN}%-10s${RESET}: %-44s ${BLUE}│${RESET}\n" "DOMAIN" "$domain"
-  printf "${BLUE}│${RESET} ${CYAN}%-10s${RESET}: %-44s ${BLUE}│${RESET}\n" "UPTIME" "$uptime"
-  echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
-  # trafik - format daftar (satu baris per field, pemisah garis putus)
-  local _sep _line
-  _sep="- - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"
-  printf "${DIM}%s${RESET}\n" "$_sep"
+  local _tr _lbl
+  _tr(){ local v="${1:-}"; [ "${#v}" -gt 42 ] && v="${v:0:42}"; printf '%s' "$v"; }
+
+  # 1) judul brand
+  _box_top
+  center_in_box "$brand" "$BOLD"
+  _box_bottom
+
+  # 2) info sistem
+  _box_top
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "OS"      "$(_tr "$os")"      "$BLUE"
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-16s ${CYAN}%-6s${RESET} : %-16s %s│${RESET}\n" \
+    "$BLUE" "RAM" "$(_tr "$ram")" "SWAP" "$(_tr "$swap")" "$BLUE"
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "CITY"    "$(_tr "$city")"    "$BLUE"
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "ISP"     "$(_tr "$isp")"     "$BLUE"
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "IP"      "$(_tr "$ip")"      "$BLUE"
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "DOMAIN"  "$(_tr "$domain")"  "$BLUE"
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "UPTIME"  "$(_tr "$uptime")"  "$BLUE"
+
+  # 3) trafik — tetap DI DALAM kotak yang sama
+  _box_mid
   _mtag=""; [ -n "$month_name" ] && _mtag="[${month_name}]"
-  printf "${GREEN}%-10s${RESET} : %-18s %-14s\n" "MONTH" "$month_val" "$_mtag"
-  printf "${GREEN}%-10s${RESET} : %s\n" "RX" "$m_rx"
-  printf "${GREEN}%-10s${RESET} : %s\n" "TX" "$m_tx"
-  printf "${DIM}%s${RESET}\n" "$_sep"
+  printf "%s│${RESET} ${GREEN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "MONTH" "$(_tr "${month_val}${_mtag:+   $_mtag}")" "$BLUE"
+  printf "%s│${RESET} ${GREEN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "RX"    "$(_tr "$m_rx")" "$BLUE"
+  printf "%s│${RESET} ${GREEN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "TX"    "$(_tr "$m_tx")" "$BLUE"
   _dtag=""; _dtag_n=$(date +%A 2>/dev/null || echo ""); [ -n "$_dtag_n" ] && _dtag="[${_dtag_n}]"
-  printf "${GREEN}%-10s${RESET} : %-18s %-14s\n" "DAY" "$day_val" "$_dtag"
-  printf "${GREEN}%-10s${RESET} : %s\n" "RX" "$d_rx"
-  printf "${GREEN}%-10s${RESET} : %s\n" "TX" "$d_tx"
-  printf "${GREEN}%-10s${RESET} : %s\n" "TRAFFIC" "$live_speed"
-  echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
+  printf "%s│${RESET} ${GREEN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "DAY"   "$(_tr "${day_val}${_dtag:+   $_dtag}")" "$BLUE"
+  printf "%s│${RESET} ${GREEN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "RX"    "$(_tr "$d_rx")" "$BLUE"
+  printf "%s│${RESET} ${GREEN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "TX"    "$(_tr "$d_tx")" "$BLUE"
+  printf "%s│${RESET} ${GREEN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "TRAFFIC" "$(_tr "$live_speed")" "$BLUE"
 
-  # service status
-  echo -e "${xcol}XRAY : $xray${RESET} | ${scol}SSH-WS : $sshws${RESET} | ${lcol}LOADBLC : $loadblc${RESET} | GOOD"
+  # 4) status layanan — satu baris, di tengah
+  local _splain _spad _spad_r
+  # teks polos (tanpa warna) untuk menghitung padding: XRAY ON   SSH ON   WEB ON
+  _splain=$(printf "XRAY %-4s  SSH %-4s  WEB %-4s" "$xray" "$sshws" "$loadblc")
+  _spad=$(( (BOX_W - ${#_splain}) / 2 )); [ "$_spad" -lt 0 ] && _spad=0
+  _spad_r=$(( BOX_W - ${#_splain} - _spad )); [ "$_spad_r" -lt 0 ] && _spad_r=0
+  _box_mid
+  printf "%s│${RESET}%*s%sXRAY${RESET} %-4s  %sSSH${RESET} %-4s  %sWEB${RESET} %-4s%*s%s│${RESET}\n" \
+    "$BLUE" "$_spad" "" "$xcol" "$xray" "$scol" "$sshws" "$lcol" "$loadblc" "$_spad_r" "" "$BLUE"
+  _box_bottom
 
-  # list accounts box
-  echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  _t="LIST ACCOUNTS"; _l=$(( (58 - ${#_t}) / 2 )); _r=$(( 58 - ${#_t} - _l ))
-  printf "${BLUE}│${RESET}%*s${BOLD}%s${RESET}%*s${BLUE}│${RESET}\n" "$_l" "" "$_t" "$_r" ""
-  echo -e "${BLUE}├──────────────────────────────────────────────────────────┤${RESET}"
-  _line=$(printf "%-18s : %-4s ACCOUNT" "SSH/OPENVPN" "$c_ssh"); printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "$_line"
-  _line=$(printf "%-18s : %-4s ACCOUNT" "VMESS" "$c_vmess"); printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "$_line"
-  _line=$(printf "%-18s : %-4s ACCOUNT" "VLESS" "$c_vless"); printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "$_line"
-  _line=$(printf "%-18s : %-4s ACCOUNT" "TROJAN" "$c_trojan"); printf "${BLUE}│${RESET} %-56s ${BLUE}│${RESET}\n" "$_line"
-  echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
+  # 5) jumlah akun
+  _box_top
+  center_in_box "LIST ACCOUNTS" "$BOLD"
+  _box_mid
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-3s ${DIM}%-38s${RESET} %s│${RESET}\n" "$BLUE" "SSH/OVPN" "$c_ssh"    "ACCOUNT" "$BLUE"
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-3s ${DIM}%-38s${RESET} %s│${RESET}\n" "$BLUE" "VMESS"    "$c_vmess"  "ACCOUNT" "$BLUE"
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-3s ${DIM}%-38s${RESET} %s│${RESET}\n" "$BLUE" "VLESS"    "$c_vless"  "ACCOUNT" "$BLUE"
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-3s ${DIM}%-38s${RESET} %s│${RESET}\n" "$BLUE" "TROJAN"   "$c_trojan" "ACCOUNT" "$BLUE"
+  _box_bottom
 
-  # version box
-  echo -e "${BLUE}┌──────────────────────────────────────────────────────────┐${RESET}"
-  printf "${BLUE}│${RESET} %-12s : %-41s ${BLUE}│${RESET}\n" "Version" "$version"
-  printf "${BLUE}│${RESET} %-12s : %-41s ${BLUE}│${RESET}\n" "Order By" "$orderby"
-  printf "${BLUE}│${RESET} %-12s : %-41s ${BLUE}│${RESET}\n" "Client Name" "$client"
-  printf "${BLUE}│${RESET} %-12s : %-41s ${BLUE}│${RESET}\n" "Expiry In" "$expiry"
-  echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
-  echo -e "${DIM}to access use ${BOLD}menu${RESET}${DIM} command${RESET}"
-  # cek update (ringan)
-  echo -e "${GREEN}Up to date${RESET}"
+  # 6) versi
+  _box_top
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "Version"     "$(_tr "$version")" "$BLUE"
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "Order By"    "$(_tr "$orderby")" "$BLUE"
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "Client Name" "$(_tr "$client")"  "$BLUE"
+  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "Expiry In"   "$(_tr "$expiry")"  "$BLUE"
+  _box_bottom
+
+  # 7) hint + update, juga di dalam kotak
+  _box_top
+  center_in_box "ketik: menu" "$DIM"
+  center_in_box "Up to date" "$GREEN"
+  _box_bottom
 }
 
 # jika dipanggil langsung (bukan disource), render
@@ -15463,8 +15490,10 @@ fi
 __EMBED_EOF__
 chmod 644 "${BASE}/etc/profile.d/mytunnel.sh"
 cat > "$ETC/config/banner.txt" << '__EMBED_EOF__'
- | SUNEK VPN - No hacking, use legally |
-
+┌──────────────────────────────────────────────────────────┐
+│                    SUNEK VPN — SERVER                    │
+│              No hacking, use legally                     │
+└──────────────────────────────────────────────────────────┘
 __EMBED_EOF__
 chmod 644 "$ETC/config/banner.txt"
 # brand.txt immutable kalau sudah terkunci -> jangan menimpa

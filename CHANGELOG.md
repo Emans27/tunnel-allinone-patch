@@ -1,3 +1,47 @@
+## v1.13.23 — 2026-11-19 — Rapikan bagian SEBELUM menu (banner SSH + dashboard login)
+
+Menu sudah 60 kolom, tapi tampilan sebelum menu masih berantakan.
+
+### 1. Banner SSH pra-login
+Dulu isi `banner.txt` cuma satu baris mentah:
+```
+ | SUNEK VPN - No hacking, use legally |
+```
+tanpa border, spasi nyasar di awal/akhir, tidak sejajar dengan kotak menu.
+Kini kotak 60 kolom yang sama dengan menu:
+```
+┌──────────────────────────────────────────────────────────┐
+│                    SUNEK VPN — SERVER                    │
+│                 No hacking, use legally                  │
+└──────────────────────────────────────────────────────────┘
+```
+Berlaku untuk OpenSSH (`Banner /etc/dropbear/banner`) dan Dropbear. Diterapkan
+di tiga titik: default wizard, blok `config/banner.txt`, dan `banner_guard`
+(tidak menimpa karena isi sumbernya sudah benar).
+
+### 2. Dashboard login (`login.sh`)
+Masalah yang ditemukan dari render nyata:
+- `draw_box "$brand" 60` -> border 62 karakter (60 dash), 2 lebih dari kotak lain
+- seksi traffic (`MONTH/RX/TX/DAY/TRAFFIC`) dicetak **di luar** kotak, mendarat
+  setelah `├───` yang tidak pernah ditutup -> kotak terbuka
+- baris status `XRAY : ON | SSH-WS : ON | LOADBLC : ON | GOOD` 45 karakter, di luar kotak
+- footer `to access use menu command` dan `Up to date` juga di luar kotak
+
+Semua bagian kini di dalam kotak 60 kolom; seksi dipisah `├───┤`, status dan
+footer di-center. Ada fallback lokal kalau `lib/helpers.sh` tidak terbaca
+(login.sh harus tetap jalan walau lib hilang).
+
+### 3. Fallback warna di login.sh
+`RED="${RED:-\033[0;31m}"` — backslash literal, bukan ESC. Diganti ANSI-C
+quoting `$'\033[0;31m'` di 9 variabel. `clear || printf '\033c'` -> `clear || true`.
+
+### Hasil ukur dari VPS
+```
+banner SSH (pra-login)  : 4 baris,  4/4 tepat 60
+dashboard login.sh      : 40 baris, 0 masalah (semua di kotak, semua 60)
+menu/main + 6 menu      : 0 lebar salah
+```
+
 ## v1.13.22 — 2026-11-19 — Tampilan menu: satu kotak 60 kolom, judul center
 
 ### Akar masalah warna (yang bikin kotak rusak)
