@@ -1,3 +1,33 @@
+## v1.13.34 — 2026-11-19 — bug email acme.sh (cert self-signed)
+
+### Gejala pasca rebuild
+Let's Encrypt menolak issue:
+```
+"contact email has forbidden domain \"example.com\""
+urn:ietf:params:acme:error:invalidContact
+```
+Cert jatuh ke self-signed (issuer CN=domain, O=MyTunnel), bukan LE.
+
+### Akar
+Blok pemilihan email acme memakai `get_domain()`. Fungsi itu membaca
+`${ETC_BASE}/config/domain.txt`; di skenario tertentu path mengembalikan `-`,
+sehingga email jadi `admin@example.com` → LE menolak (domain reserved).
+
+### Perbaikan
+- Email diambil EKSPLISIT dari `$ETC/config/domain.txt` (bukan `get_domain()`)
+- Validasi regex email + tolak domain reserved (`example|test|invalid|localhost`)
+- Bila tak valid: TIDAK register dgn email bogus; acme.sh diinstall tanpa `-m`
+  + warning jelas (self-signed sementara, panduan ganti email)
+- Bersihkan sisa blok `if false` hasil patch (cari curl/wget dgn kondisi benar)
+
+### Verifikasi
+```
+domain=sg2.sunekvpn.cc.cd -> admin@sg2.sunekvpn.cc.cd
+domain=example.com        -> TOLAK
+domain=- / kosong / IP    -> TOLAK
+```
+Live VPS: register LE sukses, issue webroot sukses, cert `Let's Encrypt` expiry 2027-02-17.
+
 ## v1.13.33 — 2026-11-19 — tampilkan proses install penting saja
 
 ### Keluhan

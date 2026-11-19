@@ -5589,17 +5589,38 @@ ACME_STUB
   # Let's Encrypt MENOLAK domain reserved 'example.com' (invalidContact), jadi
   # hanya pakai itu sebagai fallback terakhir.
   _acme_mail="${MYTUNNEL_ACME_EMAIL:-}"
-  { [ -z "$_acme_mail" ] || [ "$_acme_mail" = "-" ]; } && _acme_mail=$(get_domain)
+  # Fallback: admin@<domain> dari domain.txt (dipakai install via env/--domain).
+  # get_domain() tak dipakai di sini karena bisa kembali "-" bila path beda.
   if { [ -z "$_acme_mail" ] || [ "$_acme_mail" = "-" ]; }; then
-    _acme_mail="example.com"
-    echo -e "${YELLOW}! Email acme.sh memakai default example.com - Let's Encrypt akan menolak.${RESET}"
-    echo -e "${YELLOW}  Set dulu: MYTUNNEL_ACME_EMAIL=you@example.com bash $ETC/setup/cert.sh${RESET}" >&2
+    _d=$(head -1 "$ETC/config/domain.txt" 2>/dev/null | tr -d ' \n\r' | tr '[:upper:]' '[:lower:]')
+    case "$_d" in
+      ""|"-") _acme_mail="" ;;
+      *.*[a-zA-Z]) _acme_mail="admin@$_d" ;;
+      *) _acme_mail="" ;;
+    esac
   fi
-  if command -v curl >/dev/null 2>&1; then
-    curl -s https://get.acme.sh 2>/dev/null | sh -s email=admin@"$_acme_mail" >/dev/null 2>&1 || true
-  elif command -v wget >/dev/null 2>&1; then
-    wget -qO- https://get.acme.sh 2>/dev/null | sh -s email=admin@"$_acme_mail" >/dev/null 2>&1 || true
+  # Email HARUS bukan domain reserved. Tanpa email valid LE menolak (invalidContact).
+  if ! printf '%s' "$_acme_mail" | grep -qE '^[^@[:space:]]+@[^@[:space:]]+\.[a-zA-Z]{2,}$' \
+     || printf '%s' "$_acme_mail" | grep -qiE '@(example|test|invalid|localhost)\.'; then
+    _acme_mail=""
+    echo -e "${YELLOW}! Email acme.sh tak valid/tak diset - Let's Encrypt akan menolak (invalidContact).${RESET}"
+    echo -e "${YELLOW}  Set: MYTUNNEL_ACME_EMAIL=you@domain.com bash $ETC/setup/cert.sh${RESET}" >&2
+    echo -e "${YELLOW}  Untuk sementara dipasang self-signed; menu 6 -> 9 ganti domain lalu issue ulang.${RESET}" >&2
+  fi
+  if [ -n "$_acme_mail" ]; then
+    if command -v curl >/dev/null 2>&1; then
+      curl -s https://get.acme.sh 2>/dev/null | sh -s email="$_acme_mail" >/dev/null 2>&1 || true
+    elif command -v wget >/dev/null 2>&1; then
+      wget -qO- https://get.acme.sh 2>/dev/null | sh -s email="$_acme_mail" >/dev/null 2>&1 || true
+    fi
   else
+    if command -v curl >/dev/null 2>&1; then
+      curl -s https://get.acme.sh 2>/dev/null | sh >/dev/null 2>&1 || true
+    elif command -v wget >/dev/null 2>&1; then
+      wget -qO- https://get.acme.sh 2>/dev/null | sh >/dev/null 2>&1 || true
+    fi
+  fi
+  if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
     die "curl/wget tidak ada, tidak bisa install acme.sh" "Install curl dulu: apt install curl"
   fi
   [ -x "$ACME_HOME/acme.sh" ] || [ -x "$HOME/.acme.sh/acme.sh" ] || die "acme.sh gagal terinstall" "Cek koneksi ke https://get.acme.sh"
@@ -15697,7 +15718,7 @@ if [ -z "$_mt_version" ]; then
   _mt_version=$(printf '%s' "${0:-}" | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1)
   [ -n "$_mt_version" ] && case "$_mt_version" in v*) ;; *) _mt_version="v$_mt_version";; esac
 fi
-[ -z "$_mt_version" ] && _mt_version="v1.13.33"
+[ -z "$_mt_version" ] && _mt_version="v1.13.34"
 printf '%s\n' "$_mt_version" > "$ETC/config/version.txt"
 chmod 644 "$ETC/config/version.txt"
 cat > "$ETC/config/repo.txt" << '__EMBED_EOF__'
