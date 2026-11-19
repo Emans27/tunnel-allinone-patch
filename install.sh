@@ -9001,29 +9001,6 @@ cat > "$ETC/logrotate.d/mytunnel" << '__EMBED_EOF__'
 __EMBED_EOF__
 chmod 644 "$ETC/logrotate.d/mytunnel"
 cat > "$ETC/setup/sshws.sh" << '__EMBED_EOF__'
-#!/bin/bash
-# mytunnel setup/sshws.sh - SSH over WebSocket proxy 127.0.0.1:10004 + nginx /ssh-ws
-# shellcheck disable=SC1091,SC1090,SC2016
-set -e
-BASE="${MYTUNNEL_PREFIX:-}"
-ETC="${BASE}/etc/mytunnel"
-LOG="${BASE}/var/log/mytunnel.log"
-PY_BIN="${BASE}/usr/local/bin/mytunnel-sshws.py"
-SVC_FILE="${BASE}/etc/systemd/system/mytunnel-sshws.service"
-NGINX_SITE="${BASE}/etc/nginx/conf.d/mytunnel.conf"
-NGINX_MAIN="${BASE}/etc/nginx/nginx.conf"
-# CERT paths kept for docs (used via nginx, not direct)
-# CERT_CRT="$ETC/cert/fullchain.crt"
-# CERT_KEY="$ETC/cert/private.key"
-for f in "$ETC/lib/colors.sh" "$ETC/lib/helpers.sh"; do [ -f "$f" ] && . "$f" 2>/dev/null || true; done
-RED="${RED:-$'\033[0;31m'}"; GREEN="${GREEN:-$'\033[0;32m'}"; YELLOW="${YELLOW:-$'\033[1;33m'}"
-CYAN="${CYAN:-$'\033[0;36m'}"; RESET="${RESET:-$'\033[0m'}"
-
-die() { echo -e "${RED}✗ $1${RESET}" | tee -a "$LOG" 2>/dev/null || true; echo -e "${YELLOW}Penyebab: $2${RESET}" >&2; exit 1; }
-
-write_proxy() {
-  mkdir -p "$(dirname "$PY_BIN")" 2>/dev/null || true
-  cat > "$PY_BIN" << 'PY_EOF'
 #!/usr/bin/env python3
 import socket, threading, hashlib, base64, re, time, os, struct
 LISTEN_HOST="127.0.0.1"
@@ -9067,9 +9044,12 @@ def handle_client(conn, addr):
         m=re.search(r"Sec-WebSocket-Key:\s*(.+)\r\n", txt, re.I)
         key=m.group(1).strip() if m else "dGhlIHNhbXBsZSBub25jZQ=="
         accept=base64.b64encode(hashlib.sha1((key+"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+        _method=txt.split(" ",1)[0].upper() if txt else ""
+        RAWMODE = _method in ("PATCH","PUT")
+        # 101 Switching Protocols TERBUKTI bekerja utk HC PATCH & GET WS
         resp=f"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
         conn.sendall(resp.encode())
-        log(f"{addr} 101 sent leftover={len(leftover)}")
+        log(f"{addr} 101 sent leftover={len(leftover)} method={_method} raw={RAWMODE}")
     except Exception as e:
         log(f"{addr} handshake exc {e}")
         try: conn.close()
@@ -9104,7 +9084,7 @@ def handle_client(conn, addr):
         else: hdr=struct.pack("!BBQ",0x82,127,ln)
         return hdr+payload
     def ws_decode(data):
-        # client->server frame: opcode byte 0, len byte 1 (bit 0x80 = masked)
+        # client->server frame: opcode di byte 0, len di byte 1 (bit 0x80 = masked)
         if len(data)<2: return None
         op=data[0]&0x0f
         ln=data[1]&0x7f; off=2
@@ -9127,12 +9107,17 @@ def handle_client(conn, addr):
                 d=a.recv(8192)
                 if not d: break
                 if name=="s2c":
-                    b.sendall(ws_encode(d))
+                    # HC PATCH/PUT = raw tunnel (tanpa framing); GET WS = butuh frame
+                    if RAWMODE:
+                        b.sendall(d)
+                    else:
+                        b.sendall(ws_encode(d))
                 else:
-                    if len(d)>=2 and (d[0]&0x0f) in (1,2,0):
+                    if not RAWMODE:
                         payload=ws_decode(d)
                         if payload is not None:
                             b.sendall(payload); continue
+                    # HC raw / fallback
                     b.sendall(d)
         except Exception as e:
             log(f"{name} exc {e}")
@@ -9164,132 +9149,6 @@ def main():
         conn,addr=s.accept()
         threading.Thread(target=handle_client, args=(conn,addr), daemon=True).start()
 if __name__=="__main__": main()
-
-PY_EOF
-  chmod 755 "$PY_BIN" 2>/dev/null || true
-  echo -e "${GREEN}Proxy WS ditulis: $PY_BIN${RESET}"
-}
-
-write_service() {
-  mkdir -p "$(dirname "$SVC_FILE")" 2>/dev/null || true
-  cat > "$SVC_FILE" << SVC_EOF
-[Unit]
-Description=mytunnel SSH WS Proxy
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/python3 $PY_BIN
-Restart=always
-RestartSec=3
-User=root
-
-[Install]
-WantedBy=multi-user.target
-SVC_EOF
-  chmod 644 "$SVC_FILE" 2>/dev/null || true
-  # real path is /etc/systemd/system/mytunnel-sshws.service when BASE empty
-  if [ -z "$BASE" ]; then
-    mkdir -p /etc/systemd/system 2>/dev/null || true
-    cp -a "$SVC_FILE" /etc/systemd/system/mytunnel-sshws.service 2>/dev/null || true
-  fi
-}
-
-patch_nginx() {
-  # idempotent: tambah location = /ssh-ws jika belum ada
-  local site=""
-  # find site file
-  if [ -f "$NGINX_SITE" ]; then site="$NGINX_SITE"
-  elif [ -f "${BASE}/etc/nginx/conf.d/mytunnel.conf" ]; then site="${BASE}/etc/nginx/conf.d/mytunnel.conf"
-  elif [ -f /etc/nginx/conf.d/mytunnel.conf ]; then site="/etc/nginx/conf.d/mytunnel.conf"
-  else
-    echo -e "${YELLOW}Nginx site belum ada, skip patch (akan dibuat saat nginx.sh)${RESET}"
-    return 0
-  fi
-  # skip if already via include or inline (avoid duplicate)
-  local _inc=""
-  _inc=$(grep -oE "include[^;]*mytunnel-locations\.inc[^;]*" "$site" 2>/dev/null | head -1 | awk '{print $2}' | tr -d ';')
-  [ -z "$_inc" ] && _inc="/etc/nginx/conf.d/mytunnel-locations.inc"
-  # support BASE prefix
-  if [ -n "$BASE" ] && [ ! -f "$_inc" ]; then _inc="${BASE}$_inc"; fi
-  if grep -q "location.*\/ssh-ws" "$site" 2>/dev/null; then
-    echo -e "${GREEN}Nginx sudah ada /ssh-ws (inline)${RESET}"
-    return 0
-  fi
-  if [ -n "$_inc" ] && [ -f "$_inc" ] && grep -q "location.*\/ssh-ws" "$_inc" 2>/dev/null; then
-    echo -e "${GREEN}Nginx sudah ada /ssh-ws via $_inc (include)${RESET}"
-    return 0
-  fi
-  # backup
-  cp -a "$site" "$site.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
-  # insert before first "location / {" in each server block
-  # simple: replace the block
-  local tmp
-  tmp=$(mktemp)
-  awk '
-    /location \/ \{/ && !done80 { 
-      print "  location = /ssh-ws {"
-      print "    proxy_pass http://127.0.0.1:10004;"
-      print "    proxy_http_version 1.1;"
-      print "    proxy_set_header Upgrade $http_upgrade;"
-      print "    proxy_set_header Connection $connection_upgrade;"
-      print "    proxy_set_header Host $host;"
-      print "    proxy_set_header X-Real-IP $remote_addr;"
-      print "    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;"
-      print "    proxy_read_timeout 3600s;"
-      print "    proxy_send_timeout 3600s;"
-      print "  }"
-      print ""
-    }
-    {print}
-  ' "$site" > "$tmp" 2>/dev/null && cat "$tmp" > "$site" 2>/dev/null || {
-    # fallback sed insert
-    sed -i "s|location / {|location = /ssh-ws {\n    proxy_pass http://127.0.0.1:10004;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade \$http_upgrade;\n    proxy_set_header Connection \$connection_upgrade;\n    proxy_set_header Host \$host;\n    proxy_read_timeout 3600s;\n    proxy_send_timeout 3600s;\n  }\n  location / {|" "$site" 2>/dev/null || true
-  }
-  rm -f "$tmp" 2>/dev/null || true
-  echo -e "${GREEN}Nginx patch /ssh-ws -> 10004${RESET}"
-  # validate
-  if command -v nginx >/dev/null 2>&1; then
-    if [ -n "$BASE" ] && [ -f "$NGINX_MAIN" ]; then
-      nginx -t -c "$NGINX_MAIN" 2>&1 | head -n 20 || true
-      if ! nginx -t -c "$NGINX_MAIN" 2>&1 | grep -q "syntax is ok"; then
-        echo -e "${YELLOW}nginx -t gagal, rollback${RESET}"
-        local bak
-        bak=$(ls -t "$site.bak-"* 2>/dev/null | head -1)
-        [ -n "$bak" ] && cp -a "$bak" "$site" 2>/dev/null || true
-      fi
-    else
-      nginx -t 2>&1 | head -n 20 || true
-    fi
-  fi
-}
-
-enable_service() {
-  if [ -n "$BASE" ]; then
-    echo -e "${YELLOW}[TEST MODE] Skip systemd enable ssh-ws${RESET}"
-    mkdir -p "${BASE}/var/log" 2>/dev/null || true
-    echo "sshws simulated" > "${BASE}/var/log/sshws-sim.log" 2>/dev/null || true
-    chmod 644 "$BASE/var/log/sshws-sim.log" 2>/dev/null || true; chmod 644 "${BASE}/var/log/sshws-sim.log" 2>/dev/null || true
-    return 0
-  fi
-  systemctl daemon-reload 2>/dev/null || true
-  systemctl enable mytunnel-sshws 2>/dev/null || true
-  systemctl restart mytunnel-sshws 2>/dev/null || systemctl start mytunnel-sshws 2>/dev/null || true
-  sleep 1
-  if systemctl is-active mytunnel-sshws >/dev/null 2>&1; then echo -e "${GREEN}Service mytunnel-sshws aktif${RESET}"; else echo -e "${YELLOW}Service mytunnel-sshws belum aktif${RESET}"; fi
-  # nginx reload
-  systemctl reload nginx 2>/dev/null || nginx -s reload 2>/dev/null || true
-}
-
-main() {
-  echo -e "${CYAN}[ssh-ws] Setup SSH WS...${RESET}" | tee -a "$LOG" 2>/dev/null || true
-  write_proxy
-  write_service
-  patch_nginx
-  enable_service
-  echo -e "${GREEN}[ssh-ws] Selesai${RESET}" | tee -a "$LOG" 2>/dev/null || true
-}
-main "$@"
 
 __EMBED_EOF__
 chmod 755 "$ETC/setup/sshws.sh"

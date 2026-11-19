@@ -1,3 +1,29 @@
+## v1.13.26 — 2026-11-19 — SSH WS: HTTP Custom PATCH mode
+
+### Gejala pasca v1.13.25
+User laporkan SSH WS masih "belum bisa" meski dropbear mencatat auth succeeded.
+Log sshws: klien datang sebagai `PATCH / HTTP/1.1` (HTTP Custom mode PATCH),
+bukan `GET` WebSocket murni.
+
+### Akar
+Perbaikan v1.13.25 menambah WS framing (`ws_encode` s2c + `ws_decode` c2s) untuk
+semua klien. HC PATCH tidak memakai framing — setelah upgrade ia bicara raw.
+Akibatnya banner dropbear dibungkus `` yang HC baca sebagai data SSH invalid →
+klien menutup segera setelah auth.
+
+### Perbaikan
+- Deteksi method request; `PATCH`/`PUT` = `RAWMODE` (raw tunnel tanpa framing)
+- `GET`/`OPTIONS` = tetap WS framing (frame `0x82` s2c, unmask c2s)
+- Hapus filter c2s lama yang membuang byte banner; leftover header diteruskan
+- Respons tetap `101 Switching Protocols` untuk kedua mode (terbukti bekerja)
+
+### Bukti (VPS hidup)
+```
+101 sent leftover=0 method=PATCH raw=True
+Password auth succeeded for 'eman' from 127.0.0.1:...
+```
+Login HC PATCH sukses berkali-kali; sesi ditutup normal oleh klien setelah selesai.
+
 ## v1.13.25 — 2026-11-19 — Perbaiki ZiVPN & SSH WS timeout
 
 ### 1. ZiVPN `connect timeout`
