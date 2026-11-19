@@ -1,3 +1,28 @@
+## v1.13.29 — 2026-11-19 — SSH sering reconnect
+
+### Gejala
+Klien SSH (HC PATCH/GET WS & SSH biasa) putus tiap ~10 detik lalu reconnect sendiri.
+
+### Akar
+- Dropbear jalan TANPA `-K` (keepalive 0 = never). Sesi idle dianggap mati oleh
+  NAT/telco/tunnel middlebox → TCP direset → klien reconnect.
+- nginx blok `@sshws` hanya set `proxy_read_timeout 3600s` tanpa
+  `proxy_buffering off`; proxy buffer menahan frame kecil + tak mengosongkan
+  koneksi idle → timeout perantara.
+
+### Perbaikan
+- Dropbear unit: tambah `-K 45` (keepalive tiap 45s, deteksi mati ~90s)
+- nginx semua blok `@sshws`: tambah `proxy_buffering off; proxy_request_buffering off;`
+  setelah proxy timeout (idempoten — yang sudah punya tak diubah)
+- Dropbear live di-restart dgn `-K 45`; nginx reloaded
+
+### Bukti live
+```
+ExecStart=/usr/sbin/dropbear -p 90 -b /etc/dropbear/banner -P /run/dropbear.pid -K 45
+nginx -t OK; dropbear nginx mytunnel-sshws zivpn xray = active
+```
+Installer: `-K 45` = 1×, `proxy_buffering off` = 10 blok, `bash -n` OK.
+
 ## v1.13.28 — 2026-11-19 — version.txt + hardening NAT ZiVPN
 
 ### Temuan pasca rebuild VPS (semua layanan cek)
