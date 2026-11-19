@@ -25,19 +25,31 @@ _log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG" 2>/dev/null || true;
 # Output detail tiap setup script -> LOG saja (terminal tak banjir).
 # Terminal hanya tampil 1 baris ringkasan ("[nama] Selesai") bila ada.
 # STDERR tetap lewat ke terminal supaya error tak pernah tersembunyi.
+# Tampilkan proses instalasi yang PENTING saja (contoh: apt unpacking dropbear,
+# generate host key, "Selesai"). Semua dicatat ke LOG. Noise (banner Xray, dump
+# ss/sysctl, allow per-port, [TEST MODE] saat prefix, baris skip/sudah) tidak
+# memenuhi terminal.
+_mt_show() {
+  grep -E '\] Selesai$|\] Setup|Selecting previously|Preparing to unpack|Unpacking |Setting up |Processing triggers|Generating private|Generating .* host|SHA256:|update-initramfs|Configuration OK|syntax is ok|test is successful|Active: active|OK \(rc='
+}
 _mt_step() {
-  local _rc=0 _out _err
-  # stdout+stderr ditangkap ke var (TIDAK ke terminal). Error jangan hilang:
-  # keduanya masuk LOG, dan bila gagal stderr ditampilkan agar tak tersembunyi.
-  _out=$("$@" 2>&1)
-  _rc=$?
-  printf '%s\n' "$_out" >> "$LOG" 2>/dev/null || true
+  local _tmp
+  _tmp=$(mktemp 2>/dev/null || echo "/tmp/_mt_step.$$")
+  # stdout+stderr -> file (agar bisa difilter + dicatat), streaming tak diblokir
+  "$@" >"$_tmp" 2>&1 &
+  local _pid=$!
+  local _rc=0
+  wait "$_pid" || _rc=$?
+  # catat penuh ke LOG
+  cat "$_tmp" >> "$LOG" 2>/dev/null || true
+  # tampilkan hanya baris penting ke terminal
+  _mt_show < "$_tmp"
+  # bila gagal: tampilkan ekor output agar penyebab tak tersembunyi
   if [ "$_rc" != "0" ]; then
-    printf '%s\n' "$_out" | tail -n 15 >&2
+    echo -e "  ${YELLOW}— output terakhir —${RESET}" >&2
+    tail -n 15 "$_tmp" >&2
   fi
-  local _sum
-  _sum=$(printf '%s\n' "$_out" | grep -E '\] Selesai$' | tail -1)
-  [ -n "$_sum" ] && echo -e "  ${GREEN}✓ ${_sum}${RESET}"
+  rm -f "$_tmp" 2>/dev/null || true
   return "$_rc"
 }
 _fail() {
@@ -15685,7 +15697,7 @@ if [ -z "$_mt_version" ]; then
   _mt_version=$(printf '%s' "${0:-}" | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1)
   [ -n "$_mt_version" ] && case "$_mt_version" in v*) ;; *) _mt_version="v$_mt_version";; esac
 fi
-[ -z "$_mt_version" ] && _mt_version="v1.13.32"
+[ -z "$_mt_version" ] && _mt_version="v1.13.33"
 printf '%s\n' "$_mt_version" > "$ETC/config/version.txt"
 chmod 644 "$ETC/config/version.txt"
 cat > "$ETC/config/repo.txt" << '__EMBED_EOF__'

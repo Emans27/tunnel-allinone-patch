@@ -1,3 +1,28 @@
+## v1.13.33 — 2026-11-19 — tampilkan proses install penting saja
+
+### Keluhan
+v1.13.32 menyembunyikan SEMUA output setup -> proses install nyata (apt unpacking
+Dropbear, generate host key, validasi config) ikut hilang. User ingin seperti contoh:
+proses nyata tampil, hanya noise yang dibuang.
+
+### Perbaikan
+`_mt_step` kini FILTER, bukan menyembunyikan. Tambah `_mt_show()` yang loloskan baris
+penting ke terminal:
+- `] Setup` / `] Selesai` (header & penutup tiap setup script)
+- apt: `Selecting previously`, `Preparing to unpack`, `Unpacking`, `Setting up`,
+  `Processing triggers`
+- host key: `Generating private`, `Generating .* host`, `SHA256:`
+- validasi: `Configuration OK`, `syntax is ok`, `test is successful`, `Active: active`
+- `update-initramfs`
+Sisanya (banner Xray 2 baris, dump `ss -tlnp`, `conntrack`, `allow NNN`, `skip/sudah`)
+tetap dicatat ke LOG tapi tak memenuhi terminal.
+Bila step gagal: 15 baris terakhir ditampilkan ke stderr (penyebab tak tersembunyi).
+
+### Hasil dry-run
+116 baris terminal; baris penting tampil, noise tersembunyi, LOG tetap penuh.
+`bash -n install.sh` OK. Verifikasi filter terpisah: dari 15 baris input, hanya 7
+baris penting lolos (apt unpacking, host key, Configuration OK, Selesai).
+
 ## v1.13.32 — 2026-11-19 — bersihkan output instalasi
 
 ### Keluhan
