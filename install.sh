@@ -15473,7 +15473,7 @@ Dua cacat yang saling menutupi di `advanced/slowdns.sh`:
 Sekarang: `DNSTT_COMPAT="1"` ditulis eksplisit, dan port 53/5300 ditolak dengan
 pesan jelas saat install.
 
-Diverifikasi live di VPS 43.128.104.92: `dnstt-client -udp <ip>:5300 ... 127.0.0.1:7000`
+Diverifikasi live di VPS <VPS-IP>: `dnstt-client -udp <ip>:5300 ... 127.0.0.1:7000`
 → `begin stream` + handshake SSH sampai (balasan `Permission denied (publickey,password)`
 dari sshd = jalur sudah tembus).
 
@@ -15500,7 +15500,7 @@ Sekarang:
 - `enable_service()` di embedded `setup/nginx.sh` juga unmask sebelum enable, supaya
   instalasi ulang di VPS lama tidak lagi gagal senyap.
 
-Diverifikasi di VPS 43.128.104.92: `nginx -t` OK, nginx aktif, listener 8080/2082/2083/8880/8443/81
+Diverifikasi di VPS <VPS-IP>: `nginx -t` OK, nginx aktif, listener 8080/2082/2083/8880/8443/81
 semua kembali; simulasi `_free_port80()` memindahkan `conf.d/default.conf` tanpa menyentuh
 `mytunnel.conf`.
 
