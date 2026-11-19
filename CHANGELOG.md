@@ -1,3 +1,26 @@
+## v1.13.31 — 2026-11-19 — LOCK: anti-disconnect tahan rebuild
+
+### Tujuan
+"Jangan pernah putus koneksi jika sudah terhubung." v1.13.29/30 memperbaiki live,
+tapi belum tahan update paket / rebuild — sysctl saya (90-*) tertimpa 99-*.
+
+### Perbaikan (idempoten)
+- Drop-in systemd `dropbear.service.d/keepalive.conf` → `-K 10` selalu dipakai walau
+  unit utama ditimpa update paket (systemd merge drop-in terakhir)
+- `/etc/sysctl.d/99-zz-keepalive.conf` → `99-zz-*` dibaca paling akhir oleh sysctl.d
+  sehingga TAK tertimpa `99-conntrack.conf` / `99-mytunnel-bbr.conf`
+- TCP keepalive OS 60s/intvl 10s/probes 6; conntrack established 86400s;
+  conntrack_max 262144 (anti "table full, dropping packet")
+
+### Bukti live
+```
+dropbear-2019 -p 90 -b ... -K 10
+tcp_keepalive_time=60 intvl=10 probes=6
+nf_conntrack_tcp_timeout_established=86400  nf_conntrack_max=262144
+8 layanan active
+```
+`bash -n install.sh` OK.
+
 ## v1.13.30 — 2026-11-19 — SSH reconnect: keepalive agresif
 
 ### Lanjutan v1.13.29

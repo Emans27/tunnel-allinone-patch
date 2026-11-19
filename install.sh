@@ -7009,7 +7009,30 @@ ExecReload=/bin/kill -HUP \$MAINPID
 [Install]
 WantedBy=multi-user.target
 UNIT_EOF
-    chmod 644 /etc/systemd/system/dropbear.service 2>/dev/null || true
+    chmod 644 /etc/systemd/system/dropbear.service
+    # Drop-in: jaga -K 10 tahan update paket / edit manual (idempoten).
+    # Sesi terhubung TIDAK boleh diputus; -K 10 kirim keepalive SSH tiap 10s (anti NAT-idle).
+    mkdir -p /etc/systemd/system/dropbear.service.d
+    cat > /etc/systemd/system/dropbear.service.d/keepalive.conf <<DROPIN_EOF
+[Service]
+ExecStart=
+ExecStart=/usr/sbin/dropbear -p $dport -b /etc/dropbear/banner -P /run/dropbear.pid -K 10
+DROPIN_EOF
+    chmod 644 /etc/systemd/system/dropbear.service.d/keepalive.conf
+    # Anti-disconnect OS-level: NAT memutus idle 60-120s -> keepalive 60s + intvl 10s.
+    # 99-zz-* = dibaca paling akhir oleh sysctl.d agar tak tertimpa file lain.
+    cat > /etc/sysctl.d/99-zz-keepalive.conf <<SYSCTL_EOF
+# mytunnel anti-disconnect: sesi terhubung TIDAK BOLEH diputus
+net.ipv4.tcp_keepalive_time = 60
+net.ipv4.tcp_keepalive_intvl = 10
+net.ipv4.tcp_keepalive_probes = 6
+net.netfilter.nf_conntrack_tcp_timeout_established = 86400
+net.netfilter.nf_conntrack_tcp_timeout_close_wait = 60
+net.netfilter.nf_conntrack_tcp_timeout_fin_wait = 120
+net.netfilter.nf_conntrack_tcp_timeout_time_wait = 30
+net.netfilter.nf_conntrack_max = 262144
+SYSCTL_EOF
+    sysctl --system >/dev/null 2>&1 || true 2>/dev/null || true
     echo -e "${GREEN}Unit systemd dropbear dibuat (port $dport)${RESET}"
   fi
   echo -e "${GREEN}Dropbear config: $DB_CONF ($dport)${RESET}"
@@ -15648,7 +15671,7 @@ if [ -z "$_mt_version" ]; then
   _mt_version=$(printf '%s' "${0:-}" | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+' | head -1)
   [ -n "$_mt_version" ] && case "$_mt_version" in v*) ;; *) _mt_version="v$_mt_version";; esac
 fi
-[ -z "$_mt_version" ] && _mt_version="v1.13.30"
+[ -z "$_mt_version" ] && _mt_version="v1.13.31"
 printf '%s\n' "$_mt_version" > "$ETC/config/version.txt"
 chmod 644 "$ETC/config/version.txt"
 cat > "$ETC/config/repo.txt" << '__EMBED_EOF__'
