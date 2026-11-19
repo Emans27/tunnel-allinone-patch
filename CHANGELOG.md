@@ -23,6 +23,11 @@ Output terminal install: **210 -> 106 baris**. Terminal kini: preflight, `[N/13]
 1 baris ringkasan per setup, ringkasan akhir + panduan pasca-install.
 Detail penuh tetap di `/var/log/mytunnel.log`.
 
+### Koreksi pasca-push
+`_mt_step` awalnya menangkap `2>/dev/null` sehingga error setup tersembunyi. Kini
+stdout+stderr ditangkap ke var, masuk LOG, dan bila gagal 15 baris terakhir ditampilkan
+ke stderr. Verifikasi: setup palsu `exit 3` → rc=3 dipertahankan, pesan error tampil.
+
 ## v1.13.31 — 2026-11-19 — LOCK: anti-disconnect tahan rebuild
 
 ### Tujuan

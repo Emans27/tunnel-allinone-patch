@@ -26,10 +26,15 @@ _log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG" 2>/dev/null || true;
 # Terminal hanya tampil 1 baris ringkasan ("[nama] Selesai") bila ada.
 # STDERR tetap lewat ke terminal supaya error tak pernah tersembunyi.
 _mt_step() {
-  local _rc=0 _out
-  _out=$("$@" 2>/dev/null)
+  local _rc=0 _out _err
+  # stdout+stderr ditangkap ke var (TIDAK ke terminal). Error jangan hilang:
+  # keduanya masuk LOG, dan bila gagal stderr ditampilkan agar tak tersembunyi.
+  _out=$("$@" 2>&1)
   _rc=$?
   printf '%s\n' "$_out" >> "$LOG" 2>/dev/null || true
+  if [ "$_rc" != "0" ]; then
+    printf '%s\n' "$_out" | tail -n 15 >&2
+  fi
   local _sum
   _sum=$(printf '%s\n' "$_out" | grep -E '\] Selesai$' | tail -1)
   [ -n "$_sum" ] && echo -e "  ${GREEN}✓ ${_sum}${RESET}"
