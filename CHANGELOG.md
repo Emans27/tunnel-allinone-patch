@@ -1,3 +1,49 @@
+## v1.13.21 — 2026-11-19 — Verifikasi limit IP: lock + auto-unlock sesuai durasi
+
+Pertanyaan: apakah limit IP benar-benar berfungsi dan membuka otomatis sesuai durasi
+ban? Diverifikasi lewat uji end-to-end (bukan hanya membaca kode).
+
+### Hasil uji nyata — kedua penegak LULUS
+**SSH/Dropbear (`cron/limitip.sh`)**
+```
+uji1 3 IP vs limit=1      -> status=locked, passwd -S=L, lockfile ADA, tercatat di log
+uji2 masih dalam durasi   -> status=TETAP locked (tidak dibuka mendahului)
+uji3 lewat durasi (3 menit, LOCK_MIN=1)
+                          -> status=active, passwd -S=P, lockfile DIHAPUS
+uji4 login nyata port 22  -> BERHASIL (akun benar-benar terbuka)
+```
+**Xray vmess/vless/trojan (`cron/limitip_xray.sh`)**
+```
+uji1 3 IP vs limit=1      -> status=locked, client dihapus dari config (3->0), lockfile ADA
+uji2 masih dalam durasi   -> status=TETAP locked
+uji3 lewat durasi + IP sudah normal (1 IP)
+                          -> status=active, client dikembalikan (0->3), lockfile DIHAPUS
+uji4 lewat durasi tapi IP masih 3 -> ter-lock LAGI (perilaku benar, anti bebas setelah ban)
+```
+
+### Mekanisme
+- Durasi ban dibaca dari `config/lock_time.conf` (`LOCK_MIN`, diatur menu 3 Lock Time).
+- SSH: lockfile `/var/lib/mytunnel/limit/<user>.lock`, mtime sebagai acuan durasi.
+- Xray: lockfile `/var/lib/mytunnel/state/limitip_<proto>_<user>.lock`, client dihapus
+  dari config saat terkunci dan ditambahkan kembali saat dibuka.
+- Grace `limit + 1` IP untuk reconnect NAT; window 180s pada jalur Xray.
+
+### Temuan kecil yang diperbaiki
+Baris log auto-unlock SSH memuat durasi hardcoded `after 15m`, sehingga saat
+`LOCK_MIN` diubah jadi mis. 5 menit, log tetap menulis 15m (menyesatkan saat
+investigasi). Kini membaca `LOCK_MIN` aktual:
+```
+limitip: auto-unlock <user> after ${LOCK_MIN}m
+```
+Logika auto-unlock sendiri **benar** — hanya teks lognya yang salah.
+
+### Catatan metodologi
+Stub penghitung IP dibuat agar jumlah IP bisa diubah antar uji. Uji pertama pada
+jalur Xray sempat tampak gagal karena stub selalu melaporkan 3 IP: begitu dibuka,
+run berikutnya langsung menguncinya lagi. Dengan stub dinamis (3 -> 1 IP), jalur
+unlock terbukti bekerja normal. Seluruh akun uji dan state dihapus setelah uji;
+`jose` kembali `active` dengan 3 transports, `xray -test` OK, service active.
+
 ## v1.13.20 — 2026-11-19 — Fix kuota Xray tak pernah terkunci (key mismatch)
 
 ### Gejala

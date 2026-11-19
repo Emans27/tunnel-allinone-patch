@@ -10107,7 +10107,9 @@ main() {
           }
           rm -f "$tmp" 2>/dev/null || true
           rm -f "$lockfile" 2>/dev/null || true
-          echo "[$(date '+%Y-%m-%d %H:%M:%S')] limitip: auto-unlock $user after 15m" >> "$LOG" 2>/dev/null || true
+          # tampilkan LOCK_MIN sebenarnya (jangan hardcoded 15m — menyesatkan di log)
+          local _lm2=15; [ -f "$ETC/config/lock_time.conf" ] && . "$ETC/config/lock_time.conf" 2>/dev/null || true; _lm2="${LOCK_MIN:-15}"; [[ "$_lm2" =~ ^[0-9]+$ ]] || _lm2=15
+          echo "[$(date '+%Y-%m-%d %H:%M:%S')] limitip: auto-unlock $user after ${_lm2}m" >> "$LOG" 2>/dev/null || true
         fi
       fi
       continue
