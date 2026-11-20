@@ -15786,7 +15786,7 @@ do_top(){
     printf '  %sCPU%s\n' "$CYAN" "$RESET"; meter "$_C" "$(( 100 - _C ))% free"
     printf '  %sRAM%s\n' "$CYAN" "$RESET"; meter "$_MP" "$_MD"
     printf '  %sSSD%s\n' "$CYAN" "$RESET"; meter "$_SP" "$_SD"
-    printf '\n  %srefresh: 1s  |  tekan %sq%s%s utk keluar%s\n' "$DIM" "$BOLD" "$RESET" "$DIM" "$RESET"
+    printf '\n  %s2 FPS  |  tekan %sq%s%s utk keluar%s\n' "$DIM" "$BOLD" "$RESET" "$DIM" "$RESET"
     # CPU: selisih counter /proc/stat antar frame (tanpa sleep) -> tak memblokir.
     # Frame jalan 0.5s; CPU baru dihitung tiap >=1s agar window sampling stabil.
     now=$(date +%s%N)
