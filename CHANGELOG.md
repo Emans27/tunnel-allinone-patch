@@ -1,3 +1,33 @@
+## v1.15.0 — XHTTP transport (vmess/vless/trojan)
+
+### Added
+- Transport **XHTTP** kembali (dihapus di v1.3.0 karena 404, kini akar masalahnya
+  teridentifikasi): **Xray menuntut path berakhiran `/`**. Config lama memakai
+  `/xvless` (tanpa slash) -> `failed to validate path, config:/xvless/` -> selalu 404.
+- 3 inbound baru di config Xray: `vmess-xh` (10031), `vless-xh` (10032),
+  `trojan-xh` (10033), semuanya `network:"xhttp"` dengan path `/xvmess/`, `/xvless/`,
+  `/xtrojan/` (trailing slash).
+- nginx: server block **8444** (HTTP/2) kini `include xh_h2.inc` yang berisi
+  `location /xvmess/`, `/xvless/`, `/xtrojan/` (prefix match, `proxy_pass` tanpa URI,
+  `proxy_request_buffering off`, `chunked_transfer_encoding on`).
+- Generator link: +1 link `type=xhttp` per akun (vmess JSON `net:"xhttp"`,
+  vless & trojan URI). Helper `_proto_xh_path()`.
+- jq add/remove akun kini menyentuh 4 inbound per proto (ws/grpc/hu/xh).
+
+### Why (mengapa dulu 404, sekarang tidak)
+Xray normalisasi `path` request dengan trailing slash. Bila config `path` tanpa
+slash, validasi gagal sebelum routing. Klien XHTTP juga memakai **HTTP/2** (ALPN
+`h2`), yang di stack ini dipetakan `configure-final-443.sh` ke **8444** — bukan 9443.
+Server 8444 tidak memuat `locations.inc`, sehingga location XHTTP wajib ditambah
+ke sana (file terpisah `xh_h2.inc`).
+
+### Verified (live, 43.128.104.92 / sg2.sunekvpn.cc.cd)
+- `xray run -test` -> `Configuration OK` (13 inbound)
+- `ss` -> 127.0.0.1:10031/10032/10033 listen
+- nginx -t OK; `curl https://sg2.../xvless/` -> HTTP 400 (bukan 404)
+- **End-to-end PASS**: klien Xray lokal (socks 19999 -> xhttp-out TLS ke 443)
+  `curl --socks5 127.0.0.1:19999 https://api.ipify.org` -> `43.128.104.92`
+
 ## v1.14.1 — 2026-11-19 — fallback version basi (auto-sync saat build)
 
 ### Gejala pasca rebuild v1.14.0
