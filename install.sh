@@ -2495,6 +2495,48 @@ show_menu() {
   _box_bottom
 }
 
+# persen -> kode warna: hijau <60, kuning 60-85, merah >85
+_pct_color() {
+  local p="${1:-0}"
+  if   [ "$p" -ge 86 ]; then printf '%s' "$RED"
+  elif [ "$p" -ge 60 ]; then printf '%s' "$YELLOW"
+  else                       printf '%s' "$GREEN"; fi
+}
+
+# baris kotak dgn bar visual. Bangun body polos, ukur panjangnya, lalu pad
+# sisanya -> selalu tepat BOX_W. plain = versi polos dari persis yg dicetak.
+_box_bar_row() {
+  local label="${1:-}" pct="${2:-0}" detail="${3:-}"
+  local bw=12 fill empty bar plain pad
+  fill=$(( pct * bw / 100 ))
+  [ "$fill" -gt "$bw" ] && fill=$bw
+  [ "$fill" -lt 0 ] && fill=0
+  empty=$(( bw - fill ))
+  bar="[$(printf '%*s' "$fill" '' | tr ' ' '#')$(printf '%*s' "$empty" '' | tr ' ' '-')]"
+  plain=$(printf ' %-6s %s %3s%% %s' "$label" "$bar" "$pct" "$detail")
+  # ' %-6s ' menyisakan 1 spasi sebelum bar (trailing space %-6s terpotong oleh
+  # command subst) -> plain = " LABEL  [bar] NNN% detail", persis dgn baris cetak
+  pad=$(( BOX_W - ${#plain} )); [ "$pad" -lt 0 ] && pad=0
+  printf "%s│${RESET}%s${CYAN}%-6s${RESET} %s$(_pct_color "$pct")%s${RESET} %3s%% %s%*s%s│${RESET}\n" \
+    "$BLUE" " " "$label" "" "$bar" "$pct" "$detail" "$pad" "" "$BLUE"
+}
+
+show_resbar() {
+  local cpu disk_p disk_use disk_tot disk_detail
+  # CPU: 100 - idle, ambil sampling 2x100ms (non-blocking cukup utk menu)
+  cpu=$(top -bn2 -d 0.1 2>/dev/null | awk '/^%Cpu/ {i=$2+$4+$6+$12+$14+$15; last=100-i} END{printf "%.0f", last}')
+  [ -z "$cpu" ] && cpu=0
+  [ "$cpu" -gt 100 ] && cpu=100
+  # Storage: rootfs
+  read -r disk_p disk_use disk_tot <<< "$(df -Pm / 2>/dev/null | awk 'NR==2 {printf "%d %d %d", $5, $3, $2}')"
+  [ -z "$disk_p" ] && disk_p=0
+  disk_detail=$(printf '%dM/%dM' "$disk_use" "$disk_tot" 2>/dev/null)
+  _box_top
+  _box_bar_row "CPU" "$cpu" ""
+  _box_bar_row "SSD" "$disk_p" "$disk_detail"
+  _box_bottom
+}
+
 set_brand_name() {
   echo -e "${CYAN}=== SET BRAND NAME (PERMANEN) ===${RESET}"
   local cur nb canon
@@ -2564,6 +2606,7 @@ while true; do
   show_status
   show_version
   show_menu
+  show_resbar
   echo -ne "${BOLD}Select From Options [1-10 or x] : ${RESET}"
   read -r choice || break
   dispatch "$choice"
