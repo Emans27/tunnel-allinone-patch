@@ -12165,34 +12165,18 @@ handle_update(){
   arg1=$(echo "$text" | awk '{print $2}' | tr -d ' \n')
   local reply=""
   case "$cmd" in
-    /start|/help)
-      reply="SUNEK VPN Bot (read-only)
-Bot tidak bisa buat akun — buat/hapus lewat menu VPS.
-/start - bantuan ini
-/status - info sistem
-/list - daftar akun (ringkas)
-/backup - kirim file backup terbaru
-Kirim file backup .zip (atau .tar.gz lama) sebagai document untuk restore (hanya admin, max 25MB)."
-      ;;
-    /status)
-      reply=$(bh_status_text 2>/dev/null || echo "status error")
-      ;;
-    /list)
-      reply=$(bh_list 2>&1 | head -n 80)
-      ;;
     /backup)
       reply=$(bh_backup_send 2>&1 | head -n 20)
       ;;
-    /create_ssh|/create_vmess|/create_vless|/create_trojan|/delete|/renew|/trial)
-      reply="Fitur $cmd via bot dinonaktifkan.
-Buat/hapus/renew/trial hanya lewat menu VPS — bot hanya kirim notifikasi + /backup & restore file."
+    /create_ssh|/create_vmess|/create_vless|/create_trojan|/delete|/renew|/trial|/start|/help|/status|/list)
+      # silent: tak merespons perintah manajemen akun
       ;;
     *)
-      reply="Perintah tidak dikenal: $cmd
-Ketik /start untuk bantuan"
+      # silent: tak merespons teks acak
       ;;
   esac
   reply=$(echo "$reply" | head -c 4000)
+  [ -z "$reply" ] && return 0
   send_msg "$ADMIN_ID" "$reply"
   ah_log "bot cmd $cmd from $from_id"
 }
@@ -15847,7 +15831,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v1.16.3"
+_mt_version="v1.16.4"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')

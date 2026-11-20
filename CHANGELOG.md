@@ -1,3 +1,15 @@
+## v1.16.4 — bot silent (tak merespons perintah chat)
+
+### Changed
+- Hapus respons semua perintah chat: `/start /help /status /list` + perintah
+  manajemen akun + teks acak — **bot kini silent** (tak balas apa pun).
+- Reply kosong tak dikirim (guard `[ -z "$reply" ] && return 0`).
+
+### Tetap aktif
+- **Notifikasi** otomatis (H-3 expiry, service down) dari `cron/bot_notify.sh`.
+- **`/backup`** — kirim file backup terbaru (satu-satunya perintah yang dibalas).
+- **Restore** — kirim file backup `.zip/.tar.gz` sebagai document.
+
 ## v1.16.3 — revert: bot kembali read-only
 
 ### Reverted
