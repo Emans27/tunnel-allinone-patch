@@ -1,3 +1,16 @@
+## v1.15.1 — judul XHTTP + port TLS 443
+
+### Changed
+- Judul link ke-N kini tampil nama transport (mis. **TROJAN XHTTP**), bukan
+  fallback `TROJAN LINK 4`. Tambah `_titles+=(... XHTTP)` di vmess/vless/trojan
+  (jumlah judul = jumlah link per proto: 6/6/4).
+- `ports.conf` `TLS_PORT` **8443 -> 443**: semua link TLS kini memakai port 443
+  (443 sudah listen nginx stream + merespons ws/grpc/httpupgrade/xhttp).
+
+### Verified (live 43.128.104.92)
+- `bash -n` OK; array 16 judul = 6 vmess + 6 vless + 4 trojan
+- link ke-4 trojan -> `TROJAN XHTTP`; vless link xhttp -> port 443
+
 ## v1.15.0 — XHTTP transport (vmess/vless/trojan)
 
 ### Added

@@ -312,7 +312,7 @@ if [ ! -f "$ETC/config/ports.conf" ]; then
 # Satu sumber kebenaran - TLS 443 via stunnel, nginx hanya 8443
 OPENSSH_PORT=444
 DROPBEAR_PORT=90
-TLS_PORT=8443
+TLS_PORT=443
 NONTLS_PORT=80,8080
 ANY_PORT=2082,2083,8880
 SSHWS_PORT=10004
@@ -1898,6 +1898,7 @@ print_proto_account_info() {
       _titles+=("${proto_upper} GRPC")
       _titles+=("${proto_upper} UPGRADE TLS")
       _titles+=("${proto_upper} UPGRADE NO TLS")
+      _titles+=("${proto_upper} XHTTP")
       ;;
     vless)
       _titles+=("${proto_upper} WS TLS")
@@ -1905,11 +1906,13 @@ print_proto_account_info() {
       _titles+=("${proto_upper} GRPC")
       _titles+=("${proto_upper} Upgrade TLS")
       _titles+=("${proto_upper} Upgrade NO TLS")
+      _titles+=("${proto_upper} XHTTP")
       ;;
     trojan)
       _titles+=("TROJAN WS TLS")
       _titles+=("TROJAN GRPC")
       _titles+=("TROJAN UPGRADE TLS")
+      _titles+=("TROJAN XHTTP")
       ;;
   esac
   local idx=1
@@ -15836,7 +15839,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v1.15.0"
+_mt_version="v1.15.1"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')
