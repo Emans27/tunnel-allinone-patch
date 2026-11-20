@@ -2522,18 +2522,29 @@ _box_bar_row() {
 }
 
 show_resbar() {
-  local cpu disk_p disk_use disk_tot disk_detail
-  # CPU: 100 - idle, ambil sampling 2x100ms (non-blocking cukup utk menu)
+  local cpu ram_p ram_tot ram_free ram_used ram_detail
+  local disk_p disk_tot disk_free disk_used disk_detail
+  # CPU: 100 - idle (sampling 2x100ms, cukup utk menu)
   cpu=$(top -bn2 -d 0.1 2>/dev/null | awk '/^%Cpu/ {i=$2+$4+$6+$12+$14+$15; last=100-i} END{printf "%.0f", last}')
   [ -z "$cpu" ] && cpu=0
   [ "$cpu" -gt 100 ] && cpu=100
-  # Storage: rootfs
-  read -r disk_p disk_use disk_tot <<< "$(df -Pm / 2>/dev/null | awk 'NR==2 {printf "%d %d %d", $5, $3, $2}')"
-  [ -z "$disk_p" ] && disk_p=0
-  disk_detail=$(printf '%dM/%dM' "$disk_use" "$disk_tot" 2>/dev/null)
+  # RAM: total & bebas (avail kalau ada, fallback free)
+  read -r ram_tot ram_free <<< "$(free -m 2>/dev/null | awk '/^Mem:/ {t=$2; a=$7; f=$4; if(a>0) fr=a; else fr=f; print t" "fr}')"
+  [ -z "$ram_tot" ] && ram_tot=0
+  [ -z "$ram_free" ] && ram_free=0
+  ram_used=$(( ram_tot - ram_free )); [ "$ram_used" -lt 0 ] && ram_used=0
+  [ "$ram_tot" -gt 0 ] && ram_p=$(( ram_used * 100 / ram_tot )) || ram_p=0
+  ram_detail=$(printf '%dM/%dM' "$ram_tot" "$ram_free" 2>/dev/null)
+  # Storage: rootfs -> total / free (MB); persen dihitung sendiri
+  read -r disk_tot disk_used disk_free <<< "$(df -Pm / 2>/dev/null | awk 'NR==2 {print $2" "$3" "$4}')"
+  [ -z "$disk_tot" ] && disk_tot=0
+  [ -z "$disk_free" ] && disk_free=0
+  if [ "$disk_tot" -gt 0 ]; then disk_pct=$(( disk_used * 100 / disk_tot )); else disk_pct=0; fi
+  disk_detail=$(printf '%dM/%dM' "$disk_tot" "$disk_free" 2>/dev/null)
   _box_top
-  _box_bar_row "CPU" "$cpu" ""
-  _box_bar_row "SSD" "$disk_p" "$disk_detail"
+  _box_bar_row "CPU" "$cpu" "$(printf '%d%% free' "$(( 100 - cpu ))")"
+  _box_bar_row "RAM" "$ram_p" "$ram_detail"
+  _box_bar_row "SSD" "$disk_pct" "$disk_detail"
   _box_bottom
 }
 
