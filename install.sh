@@ -15608,42 +15608,35 @@ render_login_dashboard(){
   center_in_box "$brand" "$BOLD"
   _box_bottom
 
-  # 1b) status bar CPU/RAM/SSD — ANIMASI one-shot ~5s lalu prompt muncul.
-  # In-place overwrite pakai ANSI hardcoded (tput menghasilkan kosong saat
-  # TERM=dumb). Loop TERBATAS (bukan while true) agar profile.d lanjut ke prompt.
+  # 1b) status bar CPU/RAM/SSD (total & sisa) - SATU snapshot, tanpa animasi
   local _cpu _cpu_free _ram_tot _ram_av _ram_used _ram_p _ram_det
   local _dsk_tot _dsk_used _dsk_free _dsk_p _dsk_det
-  local _rb_n=0 _rb_max=10 _rb_k _rb_t _rb_tot2 _rb_idl2 _rb_dt
-  local _rb_pT=0 _rb_pI=0 _rb_home=$'\033[5A'
-  _rb_t=$(grep '^cpu ' /proc/stat 2>/dev/null); set -- $_rb_t
-  _rb_pT=$(( $2+$3+$4+$5+$6+$7+$8+$9 )); _rb_pI=$5
-  # cetak kerangka 5 baris (top + 3 bar + bottom) sebagai placeholder
-  _box_top; _resbar_row "CPU" 0 ""; _resbar_row "RAM" 0 ""; _resbar_row "SSD" 0 ""
+  # CPU: baca /proc/stat 2x (metode htop). Grep baris "cpu" agregat: dua `read`
+  # ke file sama share FD (yang ke-2 nyasar ke baris cpu0 per-core).
+  local _cpl _u1 _n1 _s1 _i1 _w1 _ir1 _so1 _st1 _u2 _n2 _s2 _i2 _w2 _ir2 _so2 _st2 _dt
+  _cpl=$(grep '^cpu ' /proc/stat); set -- $_cpl
+  _u1=$2; _n1=$3; _s1=$4; _i1=$5; _w1=$6; _ir1=$7; _so1=$8; _st1=$9
+  sleep 0.5
+  _cpl=$(grep '^cpu ' /proc/stat); set -- $_cpl
+  _u2=$2; _n2=$3; _s2=$4; _i2=$5; _w2=$6; _ir2=$7; _so2=$8; _st2=$9
+  _dt=$(( (_u2+_n2+_s2+_i2+_w2+_ir2+_so2+_st2) - (_u1+_n1+_s1+_i1+_w1+_ir1+_so1+_st1) ))
+  [ "$_dt" -gt 0 ] && _cpu=$(( 100 - 100*(_i2-_i1)/_dt )) || _cpu=0
+  [ "$_cpu" -lt 0 ] && _cpu=0; [ "$_cpu" -gt 100 ] && _cpu=100; _cpu_free=$(( 100 - _cpu ))
+  read -r _ram_tot _ram_av <<< "$(free -m 2>/dev/null | awk '/^Mem:/ {a=($7>0?$7:$4); print $2" "a}')"
+  [ -z "$_ram_tot" ] && _ram_tot=0; [ -z "$_ram_av" ] && _ram_av=0
+  _ram_used=$(( _ram_tot - _ram_av )); [ "$_ram_used" -lt 0 ] && _ram_used=0
+  [ "$_ram_tot" -gt 0 ] && _ram_p=$(( _ram_used * 100 / _ram_tot )) || _ram_p=0
+  _ram_det=$(awk -v t="$_ram_tot" -v a="$_ram_av" 'BEGIN{printf "%.1fG/%.1fG", t/1024, a/1024}')
+  read -r _dsk_tot _dsk_used _dsk_free <<< "$(df -Pm / 2>/dev/null | awk 'NR==2 {print $2" "$3" "$4}')"
+  [ -z "$_dsk_tot" ] && _dsk_tot=0; [ -z "$_dsk_free" ] && _dsk_free=0
+  [ "$_dsk_tot" -gt 0 ] && _dsk_p=$(( _dsk_used * 100 / _dsk_tot )) || _dsk_p=0
+  _dsk_det=$(awk -v t="$_dsk_tot" -v f="$_dsk_free" 'BEGIN{printf "%.1fG/%.1fG", t/1024, f/1024}')
+
+  _box_top
+  _resbar_row "CPU" "$_cpu" "$(printf '%d%% free' "$_cpu_free")"
+  _resbar_row "RAM" "$_ram_p" "$_ram_det"
+  _resbar_row "SSD" "$_dsk_p" "$_dsk_det"
   _box_bottom
-  while [ "$_rb_n" -lt "$_rb_max" ]; do
-    read -r _ram_tot _ram_av <<< "$(free -m 2>/dev/null | awk '/^Mem:/ {a=($7>0?$7:$4); print $2" "a}')"
-    [ -z "$_ram_tot" ] && _ram_tot=0; [ -z "$_ram_av" ] && _ram_av=0
-    _ram_used=$(( _ram_tot - _ram_av )); [ "$_ram_used" -lt 0 ] && _ram_used=0
-    [ "$_ram_tot" -gt 0 ] && _ram_p=$(( _ram_used * 100 / _ram_tot )) || _ram_p=0
-    _ram_det=$(awk -v t="$_ram_tot" -v a="$_ram_av" 'BEGIN{printf "%.1fG/%.1fG", t/1024, a/1024}')
-    read -r _dsk_tot _dsk_used _dsk_free <<< "$(df -Pm / 2>/dev/null | awk 'NR==2 {print $2" "$3" "$4}')"
-    [ -z "$_dsk_tot" ] && _dsk_tot=0; [ -z "$_dsk_free" ] && _dsk_free=0
-    [ "$_dsk_tot" -gt 0 ] && _dsk_p=$(( _dsk_used * 100 / _dsk_tot )) || _dsk_p=0
-    _dsk_det=$(awk -v t="$_dsk_tot" -v f="$_dsk_free" 'BEGIN{printf "%.1fG/%.1fG", t/1024, f/1024}')
-    _rb_t=$(grep '^cpu ' /proc/stat 2>/dev/null); set -- $_rb_t
-    _rb_tot2=$(( $2+$3+$4+$5+$6+$7+$8+$9 )); _rb_idl2=$5
-    _rb_dt=$(( _rb_tot2 - _rb_pT ))
-    [ "$_rb_dt" -gt 0 ] && _cpu=$(( 100 - 100*(_rb_idl2 - _rb_pI)/_rb_dt )) || _cpu=0
-    [ "$_cpu" -lt 0 ] && _cpu=0; [ "$_cpu" -gt 100 ] && _cpu=100
-    _rb_pT=$_rb_tot2; _rb_pI=$_rb_idl2; _cpu_free=$(( 100 - _cpu ))
-    printf '%s' "$_rb_home"
-    _resbar_row "CPU" "$_cpu" "$(printf '%d%% free' "$_cpu_free")"
-    _resbar_row "RAM" "$_ram_p" "$_ram_det"
-    _resbar_row "SSD" "$_dsk_p" "$_dsk_det"
-    _rb_n=$(( _rb_n + 1 ))
-    [ "$_rb_n" -lt "$_rb_max" ] && { read -r -t 0.5 -n 1 _rb_k 2>/dev/null || true; }
-  done
-  unset _rb_home
 
   # 2) info sistem
   _box_top
