@@ -1,3 +1,26 @@
+## v1.16.9 — UDP stack otomatis semua (UDPGW + UDP-Custom tak lagi opt-in)
+
+### Keputusan pemilik (2026-11-20)
+Sebelumnya hanya ZiVPN yang otomatis; UDPGW & UDP-Custom harus diaktifkan lewat
+menu (`confirm "Install ...?"`). Kini **semua UDP stack otomatis** saat install utama.
+
+### Changed
+- Step install utama (setelah ZiVPN) kini memanggil:
+  - `setup/udpgw.sh install` → UDPGW `0.0.0.0:7300` TCP (HTTP Custom)
+  - `setup/udp-custom.sh install` → SSH-UDP `1-65535` (listen `:36712`)
+- Keduanya pakai `MYTUNNEL_YES=1` (melewati prompt `y/N` saat non-interaktif) dan
+  **tahan gagal** (`|| lanjut`) — bila unduhan binary / build cmake gagal, install
+  utama tetap selesai.
+- Menu tetap punya opsi install/uninstall manual (tidak dihapus) — hanya kini tak
+  wajib dipilih lagi.
+- Catatan: **Security Group cloud (Tencent) tetap manual** — berlapis di luar VPS,
+  firewall/ufw di dalam VPS tak punya kendali atasnya.
+
+### Diverifikasi
+- `bash -n` per blok ter-embed: `udpgw.sh`, `udp-custom.sh`, `zivpn.sh` — semua OK.
+- `case "${1:-install}"` udpgw menerima subperintah `install` tanpa argumen lain.
+- Blok `udpgw.sh` sudah membuka `ufw allow 7300/tcp` + `7300/udp` (fix v1.16.7).
+
 ## v1.16.8 — fix UDP-Custom: pasang DNAT 1-65535 (binary tak melakukannya)
 
 ### Root cause (HTTP Custom "host:1-65535@user:pass" tak jalan)

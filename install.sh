@@ -15857,7 +15857,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v1.16.8"
+_mt_version="v1.16.9"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')
@@ -17979,6 +17979,23 @@ echo -e "${CYAN}Setup UDP ZiVPN...${RESET}"
 _log "setup zivpn"
 if ! _mt_step bash "$ETC/setup/zivpn.sh"; then
   echo -e "${YELLOW}Setup ZiVPN gagal, lanjut (cek $ETC/setup/zivpn.sh dan $LOG)${RESET}" | tee -a "$LOG" 2>/dev/null || true
+fi
+
+# UDP stack LANJUTAN otomatis (keputusan pemilik 2026-11-20: jadikan semua otomatis,
+# tidak lagi opt-in lewat menu). ZiVPN sudah otomatis di atas; UDPGW (HTTP Custom,
+# TCP 7300) & UDP-Custom (SSH-UDP 1-65535, listen :36712) kini ikut otomatis.
+# Keduanya tahan gagal: bila unduhan/certificate build gagal, install utama tetap jalan.
+# MYTUNNEL_YES=1 melewati prompt y/N di dalam script (wajib saat non-interaktif).
+echo -e "${CYAN}Setup UDPGW (HTTP Custom, TCP 7300)...${RESET}"
+_log "setup udpgw"
+if ! MYTUNNEL_YES=1 bash "$ETC/setup/udpgw.sh" install; then
+  echo -e "${YELLOW}Setup UDPGW gagal, lanjut (cek $ETC/setup/udpgw.sh dan $LOG)${RESET}" | tee -a "$LOG" 2>/dev/null || true
+fi
+
+echo -e "${CYAN}Setup UDP-Custom (SSH-UDP 1-65535)...${RESET}"
+_log "setup udp-custom"
+if ! MYTUNNEL_YES=1 bash "$ETC/setup/udp-custom.sh" install; then
+  echo -e "${YELLOW}Setup UDP-Custom gagal, lanjut (cek $ETC/setup/udp-custom.sh dan $LOG)${RESET}" | tee -a "$LOG" 2>/dev/null || true
 fi
 
 echo -e "${CYAN}[12/13] Setup Cron SSH (autoexpire + limitip)...${RESET}"
