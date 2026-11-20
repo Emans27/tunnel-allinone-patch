@@ -1,3 +1,26 @@
+## v1.16.1 — bot menu tombol + wizard
+
+### Added
+- **Menu tombol Telegram** (`/menu` / `/start`): Create/Delete/Renew/Trial/Status/
+  List/Backup/Bantuan (inline keyboard + callback_query).
+- **Wizard tanya-jawab**: pilih proto -> username -> durasi (tombol 1/3/7/30/90/
+  ketik) -> limit IP. State file `/etc/mytunnel/bot/state_<admin>.txt`, `/cancel`
+  membatalkan.
+- Helper: `bh_help_text`, `bh_main_menu_kb`, `bh_proto_kb`, `bh_days_kb`,
+  `bh_cb_handle`, `bh_wizard_text`, `send_kb`, `answer_cb`, `edit_msg`, `wz_*`.
+- **Fallback tetap jalan**: perintah teks `/create_vless user 30 2` tidak berubah.
+
+### Fixed
+- `bh_days_kb` printf multi-baris: `%s` di placeholder tak terganti (tombol durasi
+  `d:%s` literal). Diubah ke printf 1 baris dgn 5 arg.
+- Wizard step dibaca SEBELUM update (keyboard durasi tak muncul) -> baca setelah.
+- Precedence `&& ||` di routing create/delete/renew (reply kosong saat error).
+
+### Verified (live 43.128.104.92)
+- Create via tombol penuh: VLESS `wzfull` 7h, VMESS `wzbtn` 30h -> 6 link + XHTTP
+- Delete, cancel, help, status, list jalan; state file bersih
+- `mytunnel-bot` active; akun test dihapus bersih
+
 ## v1.16.0 — bot kelola akun (admin)
 
 ### Added

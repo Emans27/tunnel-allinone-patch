@@ -12121,6 +12121,37 @@ send_msg(){
   local chat_id="$1" text="$2"
   curl -4 -fsS --max-time 15 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -d "chat_id=${chat_id}" --data-urlencode "text=${text}" >/dev/null 2>&1 || true
 }
+# kirim pesan + inline keyboard (reply_markup). $3 = JSON reply_markup
+send_kb(){
+  local chat_id="$1" text="$2" markup="$3"
+  local body
+  body=$(jq -n --arg chat "$chat_id" --arg text "$text" --argjson rm "$markup" \
+    '{chat_id:$chat, text:$text, reply_markup:$rm, parse_mode:"HTML"}' 2>/dev/null) || true
+  [ -z "$body" ] && { send_msg "$chat_id" "$text"; return; }
+  curl -4 -fsS --max-time 15 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+    -H "Content-Type: application/json" -d "$body" >/dev/null 2>&1 || true
+}
+# jawab callback (hilangkan jam pasir di tombol) + edit menu jadi hasil
+answer_cb(){
+  local cb_id="$1" text="${2:-}"
+  curl -4 -fsS --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery" \
+    -d "callback_query_id=${cb_id}" --data-urlencode "text=${text}" >/dev/null 2>&1 || true
+}
+edit_msg(){
+  local chat_id="$1" mid="$2" text="$3"
+  curl -4 -fsS --max-time 15 "https://api.telegram.org/bot${BOT_TOKEN}/editMessageText" \
+    -d "chat_id=${chat_id}" -d "message_id=${mid}" --data-urlencode "text=${text}" \
+    --data-urlencode "parse_mode=HTML" >/dev/null 2>&1 || true
+}
+# state wizard: file per admin, isi "kunci=nilai" per baris
+STATE_FILE="$ETC/bot/state_${ADMIN_ID}.txt"
+wz_start(){ echo "action=$1" > "$STATE_FILE" 2>/dev/null || true; }
+wz_set(){ local k="$1" v="$2"; if grep -q "^${k}=" "$STATE_FILE" 2>/dev/null; then
+    sed -i "s#^${k}=.*#${k}=${v}#" "$STATE_FILE" 2>/dev/null || true
+  else echo "${k}=${v}" >> "$STATE_FILE" 2>/dev/null || true; fi; }
+wz_get(){ local k="$1"; grep "^${k}=" "$STATE_FILE" 2>/dev/null | tail -1 | cut -d= -f2-; }
+wz_end(){ rm -f "$STATE_FILE" 2>/dev/null || true; }
+wz_active(){ [ -f "$STATE_FILE" ] && grep -q "^action=" "$STATE_FILE" 2>/dev/null; }
 
 handle_update(){
   local upd="$1"
@@ -12130,6 +12161,19 @@ handle_update(){
   # update offset supaya tidak proses update yang sama lagi
   OFFSET=$((update_id + 1))
   echo "$OFFSET" > "$OFFSET_FILE" 2>/dev/null || true
+  # --- handle callback_query (tombol menu diklik) ---
+  local cb_id cb_data cb_mid
+  cb_id=$(echo "$upd" | jq -r '.callback_query.id // empty' 2>/dev/null)
+  if [ -n "$cb_id" ]; then
+    local cb_chat cb_from
+    cb_chat=$(echo "$upd" | jq -r '.callback_query.message.chat.id // empty' 2>/dev/null)
+    cb_from=$(echo "$upd" | jq -r '.callback_query.from.id // empty' 2>/dev/null)
+    cb_mid=$(echo "$upd" | jq -r '.callback_query.message.message_id // empty' 2>/dev/null)
+    cb_data=$(echo "$upd" | jq -r '.callback_query.data // empty' 2>/dev/null)
+    if [ "$cb_chat" != "$ADMIN_ID" ] && [ "$cb_from" != "$ADMIN_ID" ]; then answer_cb "$cb_id" "bukan admin"; return 0; fi
+    bh_cb_handle "$cb_id" "$cb_chat" "$cb_mid" "$cb_data"
+    return 0
+  fi
   # --- handle document (backup restore) ---
   local doc_id doc_name doc_size
   doc_id=$(echo "$upd" | jq -r '.message.document.file_id // empty' 2>/dev/null)
@@ -12160,6 +12204,20 @@ handle_update(){
   fi
   text=$(echo "$text" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
   [ -z "$text" ] && return 0
+  # --- WIZARD AKTIF: tangkap teks biasa sebelum parsing perintah ---
+  local _wiz_out _wz_step
+  if wz_active && ! echo "$text" | grep -qE "^/"; then
+    _wiz_out=$(bh_wizard_text "$text" 2>&1)
+    if [ -n "$_wiz_out" ]; then
+      _wz_step=$(wz_get step)   # baca SETELAH wizard update step
+      case "$_wz_step" in
+        days)  send_kb "$ADMIN_ID" "$_wiz_out" "$(bh_days_kb 1 3 7 30 90)" ;;
+        limit) send_kb "$ADMIN_ID" "$_wiz_out" "$(bh_cancel_kb)" ;;
+        *)     send_msg "$ADMIN_ID" "$_wiz_out" ;;
+      esac
+      return 0
+    fi
+  fi
   # parse argumen dgn read -a (aman dari newline; awk bisa pecah)
   local _arr cmd arg1 arg2 arg3 arg4
   read -r -a _arr <<< "$text"
@@ -12170,22 +12228,16 @@ handle_update(){
   arg4="${_arr[4]:-}"
   local reply=""
   case "$cmd" in
-    /start|/help)
-      reply="SUNEK VPN Bot (admin)
-Hanya admin ini yang bisa memakai bot.
-— MANAJEMEN AKUN —
-/create_ssh <user> <hari> [limit_ip]
-/create_vmess <user> <hari> [limit_ip] [kuota_gb]
-/create_vless <user> <hari> [limit_ip] [kuota_gb]
-/create_trojan <user> <hari> [limit_ip] [kuota_gb]
-/delete <user>            - hapus di semua proto
-/renew <user> <hari>      - perpanjang semua proto
-/trial [vmess|vless|trojan|ssh]  - buat trial 1 hari
-— INFO & UTILITAS —
-/status - info sistem
-/list - daftar akun
-/backup - kirim file backup terbaru
-Kirim file backup .zip / .tar.gz untuk restore (admin, max 25MB)."
+    /start|/menu)
+      wz_end
+      send_kb "$ADMIN_ID" "<b>🧭 SUNEK VPN — Menu Utama</b>" "$(bh_main_menu_kb)"
+      ;;
+    /cancel)
+      if wz_active; then wz_end; reply="✅ Wizard dibatalkan."
+      else reply="Tidak ada wizard berjalan."; fi
+      ;;
+    /help)
+      send_msg "$ADMIN_ID" "$(bh_help_text)"
       ;;
     /status)
       reply=$(bh_status_text 2>/dev/null || echo "status error")
@@ -12399,6 +12451,202 @@ bh_trial(){
   user=$(echo "$user" | tr -dc 'a-z0-9' | head -c 10)
   [ -z "$user" ] && user="trial123"
   if [ "$proto" = "ssh" ]; then bh_create_ssh "$user" 1 1 1; else bh_create_proto "$proto" "$user" 1 1 1; fi
+}
+
+# ================= MENU TOMBOL + WIZARD =================
+# Fallback: perintah teks (/create_vless user 30 2) tetap jalan seperti biasa.
+bh_help_text(){
+  cat <<'HELP'
+<b>SUNEK VPN Bot (admin)</b>
+Hanya admin ini yang boleh memakai bot.
+
+Kirim <b>/menu</b> untuk tombol cepat (create/delete/renew/trial).
+
+Atau pakai perintah teks:
+• <code>/create_ssh &lt;user&gt; &lt;hari&gt; [limit_ip]</code>
+• <code>/create_vmess &lt;user&gt; &lt;hari&gt; [limit_ip] [kuota_gb]</code>
+• <code>/create_vless &lt;user&gt; &lt;hari&gt; [limit_ip] [kuota_gb]</code>
+• <code>/create_trojan &lt;user&gt; &lt;hari&gt; [limit_ip] [kuota_gb]</code>
+• <code>/delete &lt;user&gt;</code> — hapus di semua proto
+• <code>/renew &lt;user&gt; &lt;hari&gt;</code> — perpanjang
+• <code>/trial [vmess|vless|trojan|ssh]</code>
+• <code>/status</code> — info sistem
+• <code>/list</code> — daftar akun
+• <code>/backup</code> — kirim file backup
+• <code>/cancel</code> — batalkan wizard berjalan
+HELP
+}
+
+bh_main_menu_kb(){
+  printf '%s' '{"inline_keyboard":[
+    [{"text":"➕ Create","callback_data":"m:create"},{"text":"🗑 Delete","callback_data":"m:delete"},{"text":"🔄 Renew","callback_data":"m:renew"}],
+    [{"text":"🎁 Trial","callback_data":"m:trial"},{"text":"📊 Status","callback_data":"m:status"},{"text":"📋 List","callback_data":"m:list"}],
+    [{"text":"💾 Backup","callback_data":"m:backup"},{"text":"❓ Bantuan","callback_data":"m:help"}]
+  ]}'
+}
+bh_proto_kb(){
+  printf '%s' '{"inline_keyboard":[
+    [{"text":"SSH","callback_data":"p:ssh"},{"text":"VMESS","callback_data":"p:vmess"}],
+    [{"text":"VLESS","callback_data":"p:vless"},{"text":"TROJAN","callback_data":"p:trojan"}],
+    [{"text":"« Kembali","callback_data":"m:main"}]
+  ]}'
+}
+bh_days_kb(){
+  local d1="$1" d2="$2" d3="$3" d4="$4" d5="$5"
+  printf '{"inline_keyboard":[[{"text":"1 hari","callback_data":"d:%s"},{"text":"3 hari","callback_data":"d:%s"},{"text":"7 hari","callback_data":"d:%s"}],[{"text":"30 hari","callback_data":"d:%s"},{"text":"90 hari","callback_data":"d:%s"},{"text":"✏️ Ketik sendiri","callback_data":"d:custom"}],[{"text":"« Batal","callback_data":"c:cancel"}]]}' \
+    "$d1" "$d2" "$d3" "$d4" "$d5"
+}
+bh_cancel_kb(){
+  printf '%s' '{"inline_keyboard":[[{"text":"« Batal","callback_data":"c:cancel"}]]}'
+}
+
+# bh_cb_handle <cb_id> <chat_id> <message_id> <data>
+bh_cb_handle(){
+  local cb_id="$1" chat="$2" mid="$3" data="$4"
+  local act="${data%%:*}" val="${data#*:}"
+  case "$act" in
+    m)
+      case "$val" in
+        main)
+          edit_msg "$chat" "$mid" "<b>🧭 SUNEK VPN — Menu Utama</b>"
+          send_kb "$chat" "Pilih aksi:" "$(bh_main_menu_kb)"; answer_cb "$cb_id";;
+        help)
+          edit_msg "$chat" "$mid" "$(bh_help_text)"; answer_cb "$cb_id";;
+        status) reply=$(bh_status_text 2>/dev/null || echo "status error"); edit_msg "$chat" "$mid" "$reply"; answer_cb "$cb_id";;
+        list) reply=$(bh_list 2>&1 | head -n 60); edit_msg "$chat" "$mid" "$reply"; answer_cb "$cb_id";;
+        backup) reply=$(bh_backup_send 2>&1 | head -n 10); edit_msg "$chat" "$mid" "$reply"; answer_cb "$cb_id";;
+        create) edit_msg "$chat" "$mid" "<b>➕ Buat akun</b>\nPilih protokol:"; send_kb "$chat" "Protokol:" "$(bh_proto_kb)"; answer_cb "$cb_id";;
+        trial) edit_msg "$chat" "$mid" "<b>🎁 Buat trial 1 hari</b>\nPilih protokol:"; send_kb "$chat" "Protokol:" "$(bh_proto_kb)"; answer_cb "$cb_id";;
+        delete)
+          wz_start delete
+          send_kb "$chat" "<b>🗑 Hapus akun</b>\n\nKetik <b>username</b> yang mau dihapus\n(a-z 0-9, 3-16 karakter):" "$(bh_cancel_kb)"
+          answer_cb "$cb_id";;
+        renew)
+          wz_start renew
+          send_kb "$chat" "<b>🔄 Perpanjang akun</b>\n\nKetik <b>username</b>:" "$(bh_cancel_kb)"
+          answer_cb "$cb_id";;
+        *) answer_cb "$cb_id" "tidak dikenal";;
+      esac
+      ;;
+    p)
+      # protokol dipilih utk create/trial
+      case "$val" in
+        ssh|vmess|vless|trojan) ;;
+        *) answer_cb "$cb_id" "protokol?"; return;;
+      esac
+      if [ "$(wz_get action)" = "trial" ]; then
+        wz_end
+        local out
+        out=$(bh_trial "$val" 2>&1 | head -n 40)
+        edit_msg "$chat" "$mid" "<b>🎁 Trial dibuat</b>"
+        send_msg "$chat" "$out"
+        answer_cb "$cb_id" "trial $val"
+      else
+        wz_start create
+        wz_set proto "$val"
+        edit_msg "$chat" "$mid" "<b>➕ Buat akun $val</b>"
+        send_kb "$chat" "Username? (a-z 0-9, 3-16 karakter):" "$(bh_cancel_kb)"
+        answer_cb "$cb_id"
+      fi
+      ;;
+    d)
+      # durasi dipilih
+      local user proto days limit
+      user=$(wz_get user); proto=$(wz_get proto); limit=$(wz_get limit)
+      if [ "$val" = "custom" ]; then
+        wz_set step days
+        send_kb "$chat" "Ketik jumlah <b>hari</b> (1-3650):" "$(bh_cancel_kb)"
+        answer_cb "$cb_id"; return
+      fi
+      days="$val"
+      wz_set days "$days"; wz_set step limit
+      local out
+      if [ "$proto" = "ssh" ]; then
+        out=$(bh_create_ssh "$user" "$days" "${limit:-0}" 0 2>&1 | head -n 40)
+      else
+        out=$(bh_create_proto "$proto" "$user" "$days" "${limit:-2}" 0 2>&1 | head -n 40)
+      fi
+      wz_end
+      edit_msg "$chat" "$mid" "<b>✅ Akun $proto dibuat</b>\nuser: $user  •  $days hari  •  limit ${limit:-2} IP"
+      send_msg "$chat" "$out"
+      answer_cb "$cb_id" "selesai"
+      ;;
+    c)
+      # batal
+      wz_end
+      edit_msg "$chat" "$mid" "<i>Dibatalkan.</i>"
+      answer_cb "$cb_id" "batal"
+      ;;
+  esac
+}
+
+# bh_wizard_text <text> — dipanggil utk tiap teks biasa saat wizard aktif.
+# return 0 = teks sudah dikonsumsi wizard (reply=$out). return 1 = bukan wizard.
+bh_wizard_text(){
+  local text="$1" out action user proto days limit
+  wz_active || return 1
+  action=$(wz_get action)
+  case "$action" in
+    delete)
+      if ! echo "$text" | grep -qE "^[a-z0-9_]{3,16}$"; then
+        echo "Username invalid (a-z 0-9, 3-16). Ketik ulang atau /cancel"
+        return 0
+      fi
+      wz_end
+      out=$(bh_delete "$text" 2>&1 | head -n 40)
+      echo "🗑 Hasil hapus: $text"$'\n\n'"$out"; return 0
+      ;;
+    renew)
+      if [ "$(wz_get step)" = "days" ]; then
+        if ! echo "$text" | grep -qE "^[0-9]+$" || [ "$text" -lt 1 ] || [ "$text" -gt 3650 ]; then
+          echo "Hari harus angka 1-3650. Ketik ulang atau /cancel"; return 0
+        fi
+        wz_end
+        local ruser rdays
+        ruser=$(wz_get user); rdays="$text"
+        out=$(bh_renew "$ruser" "$rdays" 2>&1 | head -n 40)
+        echo "🔄 Perpanjang $ruser +${rdays} hari"$'\n\n'"$out"; return 0
+      fi
+      if ! echo "$text" | grep -qE "^[a-z0-9_]{3,16}$"; then
+        echo "Username invalid (a-z 0-9, 3-16). Ketik ulang atau /cancel"
+        return 0
+      fi
+      wz_set user "$text"; wz_set step days
+      echo "🔄 Perpanjang <b>$text</b>"$'\n\n'"Ketik jumlah <b>hari</b> (1-3650):"; return 0
+      ;;
+    create)
+      proto=$(wz_get proto); user=$(wz_get user); days=$(wz_get days)
+      if [ -z "$user" ]; then
+        if ! echo "$text" | grep -qE "^[a-z0-9]{3,16}$"; then
+          echo "Username invalid (a-z 0-9 huruf kecil, 3-16). Ketik ulang atau /cancel"; return 0
+        fi
+        wz_set user "$text"
+        wz_set step days
+        echo "Username: <b>$text</b>"$'\n\n'"Pilih durasi:"; return 0
+      elif [ "$(wz_get step)" = "days" ] || [ -z "$days" ]; then
+        if ! echo "$text" | grep -qE "^[0-9]+$" || [ "$text" -lt 1 ] || [ "$text" -gt 3650 ]; then
+          echo "Hari harus angka 1-3650. Ketik ulang atau /cancel"; return 0
+        fi
+        wz_set days "$text"
+        wz_set step limit
+        echo "Durasi: <b>$text hari</b>"$'\n\n'"Ketik <b>limit IP</b> (0 = tak terbatas, default 2):"; return 0
+      elif [ "$(wz_get step)" = "limit" ] || [ -z "$limit" ]; then
+        if ! echo "$text" | grep -qE "^[0-9]+$"; then
+          echo "Limit IP harus angka. Ketik ulang atau /cancel"; return 0
+        fi
+        limit="${text:-2}"
+        wz_end
+        if [ "$proto" = "ssh" ]; then
+          out=$(bh_create_ssh "$user" "$days" "$limit" 0 2>&1 | head -n 40)
+        else
+          out=$(bh_create_proto "$proto" "$user" "$days" "$limit" 0 2>&1 | head -n 40)
+        fi
+        echo "✅ Akun $proto dibuat: $user • $days hari • limit ${limit} IP"$'\n\n'"$out"; return 0
+      fi
+      ;;
+    *)
+      return 1;;
+  esac
 }
 
 bh_backup_send(){
@@ -15876,7 +16124,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v1.16.0"
+_mt_version="v1.16.1"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')
