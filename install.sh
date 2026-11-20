@@ -2616,8 +2616,8 @@ while true; do
   show_sysinfo
   show_status
   show_version
-  show_menu
   show_resbar
+  show_menu
   echo -ne "${BOLD}Select From Options [1-10 or x] : ${RESET}"
   read -r choice || break
   dispatch "$choice"
