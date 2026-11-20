@@ -2002,7 +2002,9 @@ fh_days_left() {
   local exp="$1"
   local now exp_s
   now=$(date +%s 2>/dev/null)
-  exp_s=$(date -d "$exp" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$exp" +%s 2>/dev/null || echo 0)
+  # 23:59:59: expiry = akhir hari (sama dgn _days_left ssh_helpers) supaya
+  # sisa hari tampil 3 bukan 2 saat exp = 3 hari lagi.
+  exp_s=$(date -d "$exp 23:59:59" +%s 2>/dev/null || date -d "$exp" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$exp" +%s 2>/dev/null || echo 0)
   echo $(( (exp_s - now) / 86400 ))
 }
 
@@ -12024,7 +12026,8 @@ for db in "$ETC/db/ssh.txt" "$ETC/db/vmess.txt" "$ETC/db/vless.txt" "$ETC/db/tro
     [ -z "$user" ] || [ -z "$exp" ] && continue
     # only active
     case "$status" in locked) continue;; esac
-    exp_s=$(date -d "$exp" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$exp" +%s 2>/dev/null || echo 0)
+    # 23:59:59: expiry = akhir hari, agar left=3 tepat H-3 (bukan telat 1 hari)
+    exp_s=$(date -d "$exp 23:59:59" +%s 2>/dev/null || date -d "$exp" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$exp" +%s 2>/dev/null || echo 0)
     [ "$exp_s" -eq 0 ] && continue
     left=$(( (exp_s - _now) / 86400 ))
     if [ "$left" -eq 3 ] 2>/dev/null; then
@@ -15844,7 +15847,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v1.15.2"
+_mt_version="v1.15.3"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')

@@ -1,3 +1,17 @@
+## v1.15.3 — fix notifikasi H-3
+
+### Fixed
+- Notifikasi **H-3** sebelumnya telat 1 hari (muncul H-2). Penyebab:
+  `bot_notify.sh` & `fh_days_left` menghitung `exp_s` dari jam **00:00**,
+  padahal `autoexpire` menghapus di akhir hari. `left` jadi floor-1.
+- Tambah `23:59:59` pada `exp_s` di **`cron/bot_notify.sh`** (syarat `left=3`)
+  dan **`lib/features_helpers.sh:fh_days_left`** (tampilan sisa hari).
+
+### Verified
+- `fh_days_left(2026-11-23)` = **3** (sebelum: 2)
+- Notif H-3 dummy akun terkirim (state file dibuat); dummy dibersihkan
+- `autoexpire*.sh` TIDAK diubah (sudah benar pakai `23:59:59`)
+
 ## v1.15.2 — auto WIB saat install
 
 ### Added
