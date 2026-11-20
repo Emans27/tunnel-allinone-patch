@@ -1,3 +1,25 @@
+## v1.16.0 — bot kelola akun (admin)
+
+### Added
+- Bot Telegram kini **bisa create/delete/renew/trial** akun (sebelumnya read-only).
+  Sebelumnya handler `bh_create_*`/`bh_delete`/`bh_renew`/`bh_trial` sudah ada di
+  `handlers.sh` tapi diblokir di `bot.sh` baris 92-95 dgn pesan "dinonaktifkan".
+- Unblokir + routing: `/create_ssh|/create_vmess|/create_vless|/create_trojan`,
+  `/delete`, `/renew`, `/trial` ke handler sesuai.
+- Parse argumen `read -a` (aman dari newline; awk bisa pecah).
+- Perbaiki precedence `[ -z ] && ||` di create/delete/renew (sebelumnya reply
+  kosong saat error + `$?` bocor ke prompt).
+- Tambah unit systemd `mytunnel-bot.service` (enable+restart di live).
+- Update teks `/help` utk daftar perintah manajemen akun.
+
+### Verified (live 43.128.104.92)
+- `mytunnel-bot` service: active + enabled
+- `/create_vless botuji 7` → 6 link (termasuk XHTTP, port 443)
+- `/create_ssh botssh 7` → info SSH/Dropbear
+- `/delete botuji` → hapus di semua proto
+- Setiap create masuk 4 inbound (ws/grpc/hu/**xh**)
+- Log bot: `bot cmd /delete from 7637019563` (admin nyata, polling jalan)
+
 ## v1.15.3 — fix notifikasi H-3
 
 ### Fixed

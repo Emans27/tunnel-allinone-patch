@@ -12093,8 +12093,8 @@ chmod 755 "$ETC/cron/banner_guard.sh" 2>/dev/null || true
 chmod 755 "$ETC/cron/bot_notify.sh"
 cat > "$ETC/bot/bot.sh" << '__EMBED_EOF__'
 #!/bin/bash
-# mytunnel bot/bot.sh - daemon long-polling (curl + jq, admin-only) - READ-ONLY + backup/restore
-# Bot TIDAK bisa buat akun; hanya notifikasi create/delete dari menu + /status /list /backup + restore via file
+# mytunnel bot/bot.sh - daemon long-polling (curl + jq, admin-only) - kelola akun + backup/restore
+# Bot ADMIN: bisa create/delete/renew/trial akun + /status /list /backup + restore via file. Admin-only.
 # shellcheck disable=SC1091,SC2154,SC1090,SC2034
 set -e
 BASE="${MYTUNNEL_PREFIX:-}"
@@ -12160,19 +12160,32 @@ handle_update(){
   fi
   text=$(echo "$text" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
   [ -z "$text" ] && return 0
-  local cmd arg1
-  cmd=$(echo "$text" | awk '{print $1}' | tr -d ' \n')
-  arg1=$(echo "$text" | awk '{print $2}' | tr -d ' \n')
+  # parse argumen dgn read -a (aman dari newline; awk bisa pecah)
+  local _arr cmd arg1 arg2 arg3 arg4
+  read -r -a _arr <<< "$text"
+  cmd="${_arr[0]:-}"
+  arg1="${_arr[1]:-}"
+  arg2="${_arr[2]:-}"
+  arg3="${_arr[3]:-}"
+  arg4="${_arr[4]:-}"
   local reply=""
   case "$cmd" in
     /start|/help)
-      reply="SUNEK VPN Bot (read-only)
-Bot tidak bisa buat akun — buat/hapus lewat menu VPS.
-/start - bantuan ini
+      reply="SUNEK VPN Bot (admin)
+Hanya admin ini yang bisa memakai bot.
+— MANAJEMEN AKUN —
+/create_ssh <user> <hari> [limit_ip]
+/create_vmess <user> <hari> [limit_ip] [kuota_gb]
+/create_vless <user> <hari> [limit_ip] [kuota_gb]
+/create_trojan <user> <hari> [limit_ip] [kuota_gb]
+/delete <user>            - hapus di semua proto
+/renew <user> <hari>      - perpanjang semua proto
+/trial [vmess|vless|trojan|ssh]  - buat trial 1 hari
+— INFO & UTILITAS —
 /status - info sistem
-/list - daftar akun (ringkas)
+/list - daftar akun
 /backup - kirim file backup terbaru
-Kirim file backup .zip (atau .tar.gz lama) sebagai document untuk restore (hanya admin, max 25MB)."
+Kirim file backup .zip / .tar.gz untuk restore (admin, max 25MB)."
       ;;
     /status)
       reply=$(bh_status_text 2>/dev/null || echo "status error")
@@ -12183,9 +12196,25 @@ Kirim file backup .zip (atau .tar.gz lama) sebagai document untuk restore (hanya
     /backup)
       reply=$(bh_backup_send 2>&1 | head -n 20)
       ;;
-    /create_ssh|/create_vmess|/create_vless|/create_trojan|/delete|/renew|/trial)
-      reply="Fitur $cmd via bot dinonaktifkan.
-Buat/hapus/renew/trial hanya lewat menu VPS — bot hanya kirim notifikasi + /backup & restore file."
+    /create_ssh)
+      if [ -z "$arg1" ]; then reply="Format: /create_ssh <user> <hari> [limit_ip]"
+      else reply=$(bh_create_ssh "$arg1" "${arg2:-30}" "${arg3:-0}" "${arg4:-0}" 2>&1 | head -n 60); fi
+      ;;
+    /create_vmess|/create_vless|/create_trojan)
+      _p=$(echo "$cmd" | sed 's#/create_##')
+      if [ -z "$arg1" ]; then reply="Format: $cmd <user> <hari> [limit_ip] [kuota_gb]"
+      else reply=$(bh_create_proto "$_p" "$arg1" "${arg2:-30}" "${arg3:-2}" "${arg4:-0}" 2>&1 | head -n 60); fi
+      ;;
+    /delete)
+      if [ -z "$arg1" ]; then reply="Format: /delete <user>"
+      else reply=$(bh_delete "$arg1" 2>&1 | head -n 40); fi
+      ;;
+    /renew)
+      if [ -z "$arg1" ] || [ -z "$arg2" ]; then reply="Format: /renew <user> <hari>"
+      else reply=$(bh_renew "$arg1" "$arg2" 2>&1 | head -n 40); fi
+      ;;
+    /trial)
+      reply=$(bh_trial "${arg1:-vmess}" 2>&1 | head -n 60)
       ;;
     *)
       reply="Perintah tidak dikenal: $cmd
@@ -15847,7 +15876,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v1.15.3"
+_mt_version="v1.16.0"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')
