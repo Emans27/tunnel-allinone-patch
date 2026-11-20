@@ -15704,6 +15704,97 @@ fi
 
 __EMBED_EOF__
 chmod 755 "$ETC/login.sh"
+
+# bin/sune - monitor live CPU/RAM/SSD gaya htop (perintah: sune top)
+mkdir -p "$ETC/usr/local/bin" 2>/dev/null || true
+cat > "$ETC/usr/local/bin/sune" << '__EMBED_EOF__'
+#!/bin/bash
+# mytunnel bin/sune - live monitor (CPU/RAM/SSD) gaya htop
+# sune top   -> layar penuh, refresh in-place tiap 1s, tekan q utk keluar
+set -u
+BLUE=$'\033[0;34m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'
+RED=$'\033[0;31m'; CYAN=$'\033[0;36m'; BOLD=$'\033[1m'
+DIM=$'\033[2m'; RESET=$'\033[0m'
+
+pct_color(){ local p="${1:-0}"; if [ "$p" -ge 86 ]; then printf '%s' "$RED"; elif [ "$p" -ge 60 ]; then printf '%s' "$YELLOW"; else printf '%s' "$GREEN"; fi; }
+
+# bar 40 slot + "NN%" + detail
+meter(){
+  local pct="${1:-0}" detail="${2:-}" bw=40 fill empty
+  fill=$(( pct * bw / 100 )); [ "$fill" -gt "$bw" ] && fill=$bw; [ "$fill" -lt 0 ] && fill=0
+  empty=$(( bw - fill ))
+  printf '  %s[%s%s]%s %3d%% %s\n' \
+    "$(pct_color "$pct")" \
+    "$(printf '%*s' "$fill" '' | tr ' ' '#')" \
+    "$(printf '%*s' "$empty" '' | tr ' ' '-')" \
+    "$RESET" "$pct" "$detail"
+}
+
+# CPU: /proc/stat 2x (metode htop). Parsing 'top' tak stabil (offset bergeser).
+cpu_pct(){
+  local c u1 n1 s1 i1 w1 ir1 so1 st1 u2 n2 s2 i2 w2 ir2 so2 st2 dt
+  c=$(grep '^cpu ' /proc/stat); set -- $c
+  u1=$2;n1=$3;s1=$4;i1=$5;w1=$6;ir1=$7;so1=$8;st1=$9
+  sleep 1
+  c=$(grep '^cpu ' /proc/stat); set -- $c
+  u2=$2;n2=$3;s2=$4;i2=$5;w2=$6;ir2=$7;so2=$8;st2=$9
+  dt=$(( (u2+n2+s2+i2+w2+ir2+so2+st2) - (u1+n1+s1+i1+w1+ir1+so1+st1) ))
+  [ "$dt" -gt 0 ] && _C=$(( 100 - 100*(i2-i1)/dt )) || _C=0
+  [ "$_C" -lt 0 ] && _C=0; [ "$_C" -gt 100 ] && _C=100
+}
+
+mem_ssd(){
+  local t a u
+  t=$(awk '/^MemTotal:/{print $2}' /proc/meminfo)
+  a=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo)
+  [ -z "$t" ] && t=0; [ -z "$a" ] && a=0
+  u=$(( t - a )); [ "$u" -lt 0 ] && u=0
+  [ "$t" -gt 0 ] && _MP=$(( u * 100 / t )) || _MP=0
+  _MD=$(awk -v t="$t" -v a="$a" 'BEGIN{printf "%.2fG / %.2fG free", t/1048576, a/1048576}')
+  read -r t u a <<< "$(df -Pk / 2>/dev/null | awk 'NR==2{print $2" "$3" "$4}')"
+  [ -z "$t" ] && t=0; [ -z "$a" ] && a=0
+  [ "$t" -gt 0 ] && _SP=$(( u * 100 / t )) || _SP=0
+  _SD=$(awk -v t="$t" -v a="$a" 'BEGIN{printf "%.2fG / %.2fG free", t/1048576, a/1048576}')
+}
+
+do_top(){
+  local version key
+  version=$(cat /etc/mytunnel/config/version.txt 2>/dev/null || echo "v1.0.0")
+  tput civis 2>/dev/null || true
+  trap 'tput cnorm 2>/dev/null || true; printf "\033[H\033[2J"; exit 0' INT TERM
+  clear 2>/dev/null || printf '\033[H\033[2J'
+  while true; do
+    cpu_pct; mem_ssd
+    printf '%s%s' "$(tput cup 0 0 2>/dev/null)" "$(tput ed 2>/dev/null)"
+    printf '%s┌──────────────────────────────────────────────────────────┐%s\n' "$BLUE" "$RESET"
+    printf '%s│%s%s SUNEK VPN - LIVE MONITOR %-30s %s│%s\n' "$BLUE" "$RESET" "$BOLD" "$version" "$RESET" "$BLUE"
+    printf '%s└──────────────────────────────────────────────────────────┘%s\n' "$BLUE" "$RESET"
+    printf '\n'
+    printf '  %sCPU%s\n' "$CYAN" "$RESET"; meter "$_C" "$(( 100 - _C ))% free"
+    printf '  %sRAM%s\n' "$CYAN" "$RESET"; meter "$_MP" "$_MD"
+    printf '  %sSSD%s\n' "$CYAN" "$RESET"; meter "$_SP" "$_SD"
+    printf '\n  %srefresh: 1s  |  tekan %sq%s%s utk keluar%s\n' "$DIM" "$BOLD" "$RESET" "$DIM" "$RESET"
+    key=""
+    read -r -t 1 -n 1 key 2>/dev/null || true
+    case "$key" in q|Q) tput cnorm 2>/dev/null || true; printf '\033[H\033[2J'; exit 0 ;; esac
+  done
+}
+
+cmd="${1:-}"
+case "$cmd" in
+  top) do_top ;;
+  ""|-h|--help)
+    echo "sune - SUNEK VPN helper"
+    echo "  sune top    monitor CPU/RAM/SSD live (q utk keluar)"
+    ;;
+  *) echo "perintah tak dikenal: $cmd" >&2; echo "coba: sune top" >&2; exit 1 ;;
+esac
+__EMBED_EOF__
+chmod 755 "$ETC/usr/local/bin/sune"
+# symlink global agar bisa dipanggil tanpa path
+mkdir -p "${BASE}/usr/local/bin" 2>/dev/null || true
+ln -sf "$ETC/usr/local/bin/sune" "${BASE}/usr/local/bin/sune" 2>/dev/null || true
+
 mkdir -p "${BASE}/etc/profile.d" 2>/dev/null || true
 cat > "${BASE}/etc/profile.d/mytunnel.sh" << '__EMBED_EOF__'
 #!/bin/sh
