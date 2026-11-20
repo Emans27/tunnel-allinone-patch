@@ -15710,11 +15710,19 @@ mkdir -p "$ETC/usr/local/bin" 2>/dev/null || true
 cat > "$ETC/usr/local/bin/sune" << '__EMBED_EOF__'
 #!/bin/bash
 # mytunnel bin/sune - live monitor (CPU/RAM/SSD) gaya htop
-# sune top   -> layar penuh, refresh in-place tiap 1s, tekan q utk keluar
+# sune top -> layar penuh, refresh in-place tiap 1s, tekan q utk keluar
 set -u
 BLUE=$'\033[0;34m'; GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'
 RED=$'\033[0;31m'; CYAN=$'\033[0;36m'; BOLD=$'\033[1m'
 DIM=$'\033[2m'; RESET=$'\033[0m'
+
+# ANSI hardcoded (JANGAN tput): di sesi ssh non-interaktif TERM=dumb sehingga
+# tput cup/ed menghasilkan kosong -> frame tidak pernah ditimpa (menumpuk).
+HOME_CUR=$'\033[H'        # kursor ke pojok kiri atas
+CLEAR_DOWN=$'\033[J'      # hapus dari kursor ke bawah layar
+HIDE_CUR=$'\033[?25l'     # sembunyikan kursor
+SHOW_CUR=$'\033[?25h'     # tampilkan kursor
+CLEAR_ALL=$'\033[H\033[2J\033[3J'
 
 pct_color(){ local p="${1:-0}"; if [ "$p" -ge 86 ]; then printf '%s' "$RED"; elif [ "$p" -ge 60 ]; then printf '%s' "$YELLOW"; else printf '%s' "$GREEN"; fi; }
 
@@ -15730,17 +15738,19 @@ meter(){
     "$RESET" "$pct" "$detail"
 }
 
-# CPU: /proc/stat 2x (metode htop). Parsing 'top' tak stabil (offset bergeser).
+# CPU: /proc/stat (metode htop). Parsing 'top' tak stabil (offset bergeser).
+# cpu_now: baca counter agregat sekali, tanpa sleep -> loop tetap responsif.
+# cpu_pct: hitung % dari selisih 2 snapshot (dipanggil antar frame).
+_read_cpu(){
+  local c; c=$(grep '^cpu ' /proc/stat); set -- $c
+  TOT=$(( $2+$3+$4+$5+$6+$7+$8+$9 )); IDL=$5
+}
 cpu_pct(){
-  local c u1 n1 s1 i1 w1 ir1 so1 st1 u2 n2 s2 i2 w2 ir2 so2 st2 dt
-  c=$(grep '^cpu ' /proc/stat); set -- $c
-  u1=$2;n1=$3;s1=$4;i1=$5;w1=$6;ir1=$7;so1=$8;st1=$9
-  sleep 1
-  c=$(grep '^cpu ' /proc/stat); set -- $c
-  u2=$2;n2=$3;s2=$4;i2=$5;w2=$6;ir2=$7;so2=$8;st2=$9
-  dt=$(( (u2+n2+s2+i2+w2+ir2+so2+st2) - (u1+n1+s1+i1+w1+ir1+so1+st1) ))
-  [ "$dt" -gt 0 ] && _C=$(( 100 - 100*(i2-i1)/dt )) || _C=0
+  _read_cpu
+  local dt=$(( TOT - _pTOT ))
+  [ "$dt" -gt 0 ] && _C=$(( 100 - 100*(IDL - _pIDL)/dt )) || _C=0
   [ "$_C" -lt 0 ] && _C=0; [ "$_C" -gt 100 ] && _C=100
+  _pTOT=$TOT; _pIDL=$IDL
 }
 
 mem_ssd(){
@@ -15758,14 +15768,17 @@ mem_ssd(){
 }
 
 do_top(){
-  local version key
+  local version key prev_t now
   version=$(cat /etc/mytunnel/config/version.txt 2>/dev/null || echo "v1.0.0")
-  tput civis 2>/dev/null || true
-  trap 'tput cnorm 2>/dev/null || true; printf "\033[H\033[2J"; exit 0' INT TERM
-  clear 2>/dev/null || printf '\033[H\033[2J'
+  prev_t=0; _C=0; _pTOT=0; _pIDL=0
+  printf '%s' "$HIDE_CUR"
+  trap 'printf "%s" "$SHOW_CUR"; printf "%s" "$CLEAR_ALL"; exit 0' INT TERM
+  printf '%s' "$CLEAR_ALL"
+  _read_cpu; _pTOT=$TOT; _pIDL=$IDL   # baseline, tanpa sleep
   while true; do
-    cpu_pct; mem_ssd
-    printf '%s%s' "$(tput cup 0 0 2>/dev/null)" "$(tput ed 2>/dev/null)"
+    mem_ssd
+    # gambar: pindah ke pojok atas lalu timpa frame lama
+    printf '%s%s' "$HOME_CUR" "$CLEAR_DOWN"
     printf '%s┌──────────────────────────────────────────────────────────┐%s\n' "$BLUE" "$RESET"
     printf '%s│%s%s SUNEK VPN - LIVE MONITOR %-30s %s│%s\n' "$BLUE" "$RESET" "$BOLD" "$version" "$RESET" "$BLUE"
     printf '%s└──────────────────────────────────────────────────────────┘%s\n' "$BLUE" "$RESET"
@@ -15774,9 +15787,16 @@ do_top(){
     printf '  %sRAM%s\n' "$CYAN" "$RESET"; meter "$_MP" "$_MD"
     printf '  %sSSD%s\n' "$CYAN" "$RESET"; meter "$_SP" "$_SD"
     printf '\n  %srefresh: 1s  |  tekan %sq%s%s utk keluar%s\n' "$DIM" "$BOLD" "$RESET" "$DIM" "$RESET"
+    # CPU: selisih counter /proc/stat antar frame (tanpa sleep) -> tak memblokir.
+    # Frame jalan 0.5s; CPU baru dihitung tiap >=1s agar window sampling stabil.
+    now=$(date +%s%N)
+    if [ "$(( (now - prev_t) / 1000000000 ))" -ge 1 ]; then
+      cpu_pct
+      prev_t=$now
+    fi
     key=""
-    read -r -t 1 -n 1 key 2>/dev/null || true
-    case "$key" in q|Q) tput cnorm 2>/dev/null || true; printf '\033[H\033[2J'; exit 0 ;; esac
+    read -r -t 0.5 -n 1 key 2>/dev/null || true
+    case "$key" in q|Q) printf '%s' "$SHOW_CUR"; printf '%s' "$CLEAR_ALL"; exit 0 ;; esac
   done
 }
 
