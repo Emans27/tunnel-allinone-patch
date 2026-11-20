@@ -15640,12 +15640,47 @@ render_login_dashboard(){
   fi
   BOX_W=${BOX_W:-58}
 
+  # baris status bar (CPU/RAM/SSD): bangun versi polos, ukur, lalu pad -> tepat BOX_W
+  _pct_color(){ local p="${1:-0}"; if [ "$p" -ge 86 ]; then printf '%s' "$RED"; elif [ "$p" -ge 60 ]; then printf '%s' "$YELLOW"; else printf '%s' "$GREEN"; fi; }
+  _resbar_row(){
+    local label="${1:-}" pct="${2:-0}" detail="${3:-}"
+    local bw=12 fill empty bar plain pad
+    fill=$(( pct * bw / 100 )); [ "$fill" -gt "$bw" ] && fill=$bw; [ "$fill" -lt 0 ] && fill=0
+    empty=$(( bw - fill ))
+    bar="[$(printf '%*s' "$fill" '' | tr ' ' '#')$(printf '%*s' "$empty" '' | tr ' ' '-')]"
+    plain=$(printf ' %-6s %s %3s%% %s' "$label" "$bar" "$pct" "$detail")
+    pad=$(( BOX_W - ${#plain} )); [ "$pad" -lt 0 ] && pad=0
+    printf "%s│${RESET}%s${CYAN}%-6s${RESET} %s$(_pct_color "$pct")%s${RESET} %3s%% %s%*s%s│${RESET}\n" \
+      "$BLUE" " " "$label" "" "$bar" "$pct" "$detail" "$pad" "" "$BLUE"
+  }
+
   local _tr _lbl
   _tr(){ local v="${1:-}"; [ "${#v}" -gt 42 ] && v="${v:0:42}"; printf '%s' "$v"; }
 
   # 1) judul brand
   _box_top
   center_in_box "$brand" "$BOLD"
+  _box_bottom
+
+  # 1b) status bar CPU / RAM / SSD (total & sisa)
+  local _cpu _cpu_free _ram_tot _ram_av _ram_used _ram_p _ram_det
+  local _dsk_tot _dsk_used _dsk_free _dsk_p _dsk_det
+  _cpu=$(top -bn2 -d 0.1 2>/dev/null | awk '/^%Cpu/ {i=$2+$4+$6+$12+$14+$15; l=100-i} END{printf "%.0f", l}')
+  [ -z "$_cpu" ] && _cpu=0; [ "$_cpu" -gt 100 ] && _cpu=100; _cpu_free=$(( 100 - _cpu ))
+  read -r _ram_tot _ram_av <<< "$(free -m 2>/dev/null | awk '/^Mem:/ {a=($7>0?$7:$4); print $2" "a}')"
+  [ -z "$_ram_tot" ] && _ram_tot=0; [ -z "$_ram_av" ] && _ram_av=0
+  _ram_used=$(( _ram_tot - _ram_av )); [ "$_ram_used" -lt 0 ] && _ram_used=0
+  [ "$_ram_tot" -gt 0 ] && _ram_p=$(( _ram_used * 100 / _ram_tot )) || _ram_p=0
+  _ram_det=$(printf '%dM/%dM' "$_ram_tot" "$_ram_av")
+  read -r _dsk_tot _dsk_used _dsk_free <<< "$(df -Pm / 2>/dev/null | awk 'NR==2 {print $2" "$3" "$4}')"
+  [ -z "$_dsk_tot" ] && _dsk_tot=0; [ -z "$_dsk_free" ] && _dsk_free=0
+  [ "$_dsk_tot" -gt 0 ] && _dsk_p=$(( _dsk_used * 100 / _dsk_tot )) || _dsk_p=0
+  _dsk_det=$(printf '%dM/%dM' "$_dsk_tot" "$_dsk_free")
+
+  _box_top
+  _resbar_row "CPU" "$_cpu" "$(printf '%d%% free' "$_cpu_free")"
+  _resbar_row "RAM" "$_ram_p" "$_ram_det"
+  _resbar_row "SSD" "$_dsk_p" "$_dsk_det"
   _box_bottom
 
   # 2) info sistem
