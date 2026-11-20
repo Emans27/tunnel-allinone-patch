@@ -1,3 +1,19 @@
+## v1.16.3 — revert: bot kembali read-only
+
+### Reverted
+- Batalkan semua fitur bot yang baru (v1.16.0-1.16.2) atas permintaan pemilik
+  proyek: hapus menu tombol, wizard tanya-jawab, dan kemampuan create/delete/
+  renew/trial via bot.
+- `bot.sh` kembali **read-only**: `/create_* /delete /renew /trial` ditolak
+  ("Fitur dinonaktifkan — buat/hapus lewat menu VPS").
+- Perintah tersisa: `/status /list /backup` + restore via file backup.
+
+### Retained (tidak dibatalkan)
+- Fix notifikasi H-3 (`23:59:59`) dari v1.15.3 — tetap berlaku.
+- Perbaikan timezone WIB (v1.15.2) — tetap berlaku.
+- Transport XHTTP + port 443 (v1.15.0-1.15.1) — tetap berlaku.
+- `mytunnel-bot.service` tetap jalan (hanya untuk notifikasi/backup/restore).
+
 ## v1.16.2 — perbaiki tampilan & error diam bot
 
 ### Fixed
