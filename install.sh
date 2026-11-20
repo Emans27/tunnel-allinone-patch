@@ -277,7 +277,12 @@ if [[ "$NO_DEPS" = "0" && -z "$MYTUNNEL_PREFIX" ]]; then
   apt-get install -y curl wget jq openssl bc cron socat at python3 bzip2 fail2ban >/dev/null 2>&1 || \
   apt-get install -y curl wget jq openssl bc at python3 bzip2 fail2ban >/dev/null 2>&1 || true
 fi
-echo -e "${CYAN}[2/13] Buat folder struktur...${RESET}"
+echo -e "${CYAN}[2/13] Zona waktu (WIB) + buat folder struktur...${RESET}"
+# Sinkronkan jam server ke WIB agar cron autoexpire & expiry akun/trial
+# memakai jam Jakarta, bukan TZ bawaan provider (biasanya UTC/CST).
+timedatectl set-timezone Asia/Jakarta 2>/dev/null \
+  || { ln -sf /usr/share/zoneinfo/Asia/Jakarta /etc/localtime; echo "Asia/Jakarta" > /etc/timezone; } \
+  || true
 mkdir -p "$ETC/config" "$ETC/db" "$ETC/lib" "$ETC/menu" "$ETC/setup" "$ETC/cron" "$ETC/cert" "$ETC/features" "$ETC/bot" "$ETC/advanced" "$ETC/slowdns" "$ETC/logrotate.d" "$(dirname "$LOG")" "$BIN" "${BASE}/usr/local/etc/xray" "${BASE}/var/log/xray" "${BASE}/var/log/nginx" "${BASE}/etc/nginx/conf.d" "${BASE}/etc/sysctl.d" "${BASE}/var/lib/mytunnel/limit" "${BASE}/var/lib/mytunnel/state" "${BASE}/run" "${BASE}/etc/default" "${BASE}/etc/dropbear" "${BASE}/etc/logrotate.d" 2>/dev/null || true
 touch "$LOG" 2>/dev/null || true; chmod 644 "$LOG" 2>/dev/null || true
 mkdir -p "${BASE}/var/log/xray" 2>/dev/null || true
@@ -15839,7 +15844,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v1.15.1"
+_mt_version="v1.15.2"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')

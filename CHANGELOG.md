@@ -1,3 +1,12 @@
+## v1.15.2 — auto WIB saat install
+
+### Added
+- Installer kini **otomatis set timezone `Asia/Jakarta`** (WIB) pada step [2/13].
+  Sebelumnya TZ mengikuti provider VPS (biasanya UTC/CST), membuat cron
+  `autoexpire` (00:00) & expiry akun/trial telat 7-8 jam dari jam Jakarta.
+- Fallback `ln -sf /usr/share/zoneinfo/Asia/Jakarta` utk container tanpa
+  `timedatectl`; aman di-skip bila keduanya gagal.
+
 ## v1.15.1 — judul XHTTP + port TLS 443
 
 ### Changed
