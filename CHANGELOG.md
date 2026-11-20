@@ -1,3 +1,19 @@
+## v1.16.6 — fix /etc/timezone tak ikut WIB
+
+### Fixed
+- `timedatectl set-timezone Asia/Jakarta` **sukses (exit 0) tapi HANYA menulis
+  `/etc/localtime`** — tidak menyentuh `/etc/timezone`. Karena exit-nya 0, fallback
+  `|| { ... }` di installer tak pernah jalan, sehingga `/etc/timezone` tetap memakai
+  TZ provider (Tencent = `Asia/Shanghai`) padahal jam sistem sudah WIB.
+- Dampak: program/util yang membaca file `/etc/timezone` (bukan `localtime`) memakai
+  TZ provider -> offset expiry akun/trial bisa meleset.
+- Kini ketiganya ditulis **eksplisit & terpisah** (bukan `||`): `timedatectl`,
+  `ln -sf zoneinfo -> localtime`, dan `echo "Asia/Jakarta" > /etc/timezone`.
+
+### Ditemukan di VPS baru 43.133.36.16 (Debian 12, Tencent)
+- `timedatectl` = Asia/Jakarta (WIB) tapi `cat /etc/timezone` = Asia/Shanghai
+- Setelah patch: keduanya `Asia/Jakarta`, konsisten
+
 ## v1.16.5 — fix configure-final-443.sh utk VPS baru (stream 443)
 
 ### Fixed
