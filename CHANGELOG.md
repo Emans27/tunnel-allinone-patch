@@ -1,3 +1,23 @@
+## v1.16.5 — fix configure-final-443.sh utk VPS baru (stream 443)
+
+### Fixed
+- **`NGINX_CONF_DIR: unbound variable`** — variabel dipakai di 3 tempat
+  (`xh_h2.inc`) tapi tak pernah didefinisikan; dengan `set -u` ini fatal, membuat
+  script berhenti di tengah sehingga langkah "hapus listen 443" terlewati.
+  Kini didefinisikan `="/etc/nginx/conf.d"` di header script.
+- **Jangkar penyisipan `listen 9443`** — dulu mencari `listen 8443 ssl` (arsitektur
+  lama). VPS baru arsitektur **stream 443** TIDAK punya `listen` di blok TLS utama
+  (443 datang dari blok stream `ssl_preread`), jadi penyisipan selalu gagal.
+  Kini 3 jangkar berurutan: `8443` -> `443`/`[::]:443` -> blok server dgn
+  `ssl_certificate` (TLS utama tanpa listen).
+- Gejala lama yang ikut teratasi: `bind() to 0.0.0.0:443 failed (98)` — listen 443
+  tak terhapus karena script berhenti di bug #1.
+
+### Verified (VPS baru 43.133.36.16, dari config pra-final murni)
+- `configure-final-443.sh` menambah 8444 + 9443 dari nol, TANPA error jangkar
+- `verify.sh`: **18 PASS, 0 FAIL** (semua listener hidup, ALPN route benar)
+- listener: `0.0.0.0:443` (stream) + `127.0.0.1:8444` + `127.0.0.1:9443`
+
 ## v1.16.4 — bot silent (tak merespons perintah chat)
 
 ### Changed

@@ -15831,7 +15831,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v1.16.4"
+_mt_version="v1.16.5"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')
@@ -17212,6 +17212,9 @@ BACKUP_DIR="${BACKUP_BASE}"
 BACKUP_OFF_SUFFIX=".off"
 NGINX_CONF="/etc/nginx/nginx.conf"
 SITE_CONF="/etc/nginx/conf.d/mytunnel.conf"
+# direktori tempat include XHTTP (xh_h2.inc) ditulis; wajib terdefinisi karena
+# script memakai `set -u` (unbound variable = fatal). Sinkron ke SITE_CONF.
+NGINX_CONF_DIR="/etc/nginx/conf.d"
 STUNNEL_CONF="/etc/stunnel/stunnel.conf"
 SYSCTL_CONF="/etc/sysctl.d/99-conntrack.conf"
 
@@ -17616,13 +17619,35 @@ apply_http_tls_listen() {
 import re, sys
 path, port = sys.argv[1], sys.argv[2]
 s = open(path).read()
-# 1. sisipkan listen 127.0.0.1:<port> setelah listen 8443 (hanya jika belum ada)
+# 1. sisipkan listen 127.0.0.1:<port> setelah listen 8443 (hanya jika belum ada).
+#    Jangkar berurutan (VPS baru arsitektur stream 443 TIDAK punya `listen` di
+#    blok TLS utama - 443 datang dari blok stream ssl_preread):
+#      a) `listen 8443 ssl`   (arsitektur lama)
+#      b) `listen [::]:443` / `listen 443` (belum dipindah ke stream)
+#      c) blok server yang punya `ssl_certificate` (TLS utama, TANPA listen)
 if not re.search(r'listen[ \t]+127\.0\.0\.1:%s[ \t]+ssl' % re.escape(port), s):
     m = re.search(r'^([ \t]*)listen[ \t]+8443[ \t]+ssl[^\n]*\n', s, re.M)
     if not m:
-        sys.exit('listen 8443 ssl tidak ditemukan')
-    indent = m.group(1)
-    s = s[:m.end()] + f'{indent}listen 127.0.0.1:{port} ssl;\n' + s[m.end():]
+        m = re.search(r'^([ \t]*)listen[ \t]+\[::\]:443[ \t]+ssl[^\n]*\n', s, re.M)
+    if not m:
+        m = re.search(r'^([ \t]*)listen[ \t]+443[ \t]+ssl[^\n]*\n', s, re.M)
+    if m:
+        indent = m.group(1)
+        s = s[:m.end()] + f'{indent}listen 127.0.0.1:{port} ssl;\n' + s[m.end():]
+    else:
+        # jangkar (c): server TLS utama yang punya ssl_certificate tapi tak punya listen
+        sc = re.search(r'^([ \t]*)ssl_certificate[ \t]+', s, re.M)
+        if not sc:
+            sys.exit('tidak ada jangkar listen (8443/443) maupun blok ssl_certificate utk menyisipkan %s' % port)
+        # naik ke `server {` pembuka blok itu, sisip listen di bawahnya
+        pre = s[:sc.start()]
+        ob = None
+        for mo in re.finditer(r'^([ \t]*)server[ \t]*\{[ \t]*\n', pre, re.M):
+            ob = mo
+        if ob is None:
+            sys.exit('blok server ssl_certificate tak ditemukan')
+        ind = ob.group(1)
+        s = s[:ob.end()] + f'{ind}listen 127.0.0.1:{port} ssl;\n' + s[ob.end():]
 # 9443 SENGAJA tanpa http2: klien WS menawarkan ALPN 'h2,http/1.1'; bila 9443
 # punya http2, nginx 1.18 membalas 400 dan WS mati. h2 untuk gRPC lewat 8443.
 # 2. WAJIB: hapus listen 443 / [::]:443 — blok stream ssl_preread yang mengambil 443.
