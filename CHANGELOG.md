@@ -1,3 +1,39 @@
+## v1.16.8 — fix UDP-Custom: pasang DNAT 1-65535 (binary tak melakukannya)
+
+### Root cause (HTTP Custom "host:1-65535@user:pass" tak jalan)
+- Binary `zhets/udp-custom` v1.4 **TIDAK memasang iptables DNAT** (tidak ada
+  string `iptables`/`PREROUTING` di dalam binary), meski komentar installer
+  mengira rentang 1-65535 "ditangani binary".
+- Akibatnya `DNAT rules: 0` -> UDP ke port 1-65535 tak pernah dialihkan ke
+  listen internal `:36712` -> klien SSH UDP / HTTP Custom timeout.
+
+### Fixed
+- Unit `udp-custom.service` kini memasang DNAT sendiri via `ExecStartPre`:
+  `REDIRECT udp 1:65535 -> 36712` + `ACCEPT udp 36712` (idempoten, `-C || -I/-A`).
+- Guard ZiVPN: `ACCEPT udp 5667` dipasang via `-I` (paling atas) sehingga redirect
+  1-65535 (di `-A`) tidak menelan rule ZiVPN `5667` & `6000-19999`.
+- `ExecStop` membersihkan kedua rule saat stop/uninstall.
+
+### Diverifikasi di VPS live 43.133.36.16
+- DNAT `1:65535 -> 36712` aktif; UDP dari luar ke port acak (5555/12345/33333/
+  60000/8000) masuk & dialihkan ke 36712 (counter DNAT naik 0->3).
+- ZiVPN tetap hidup: `5667` & `6000-19999 -> 5667` tak tertimpa.
+- Unit `udp-custom-dnat.service` (oneshot) dipasang manual di VPS live.
+
+## v1.16.7 — fix UDPGW firewall: buka 7300/TCP
+
+### Root cause (HTTP Custom tak bisa konek)
+- `badvpn-udpgw` default menerima koneksi **TCP** dari klien (HTTP Custom/KPN Tunnel),
+  lalu meneruskan ke UDP. Tapi installer hanya membuka `ufw allow 7300/udp`.
+- Akibatnya di VPS baru 43.133.36.16: process `badvpn-udpgw` LISTEN `0.0.0.0:7300` (TCP),
+  SYN dari klien sampai (tcpdump membuktikan) tapi ufw DROP tanpa SYN-ACK -> klien timeout.
+- Klien memakai format `host:7300@user:pass` = kredensial akun SSH via UDPGW.
+
+### Fixed
+- `setup_ufw()` + `install_udpgw()` kini membuka **7300/tcp** DAN 7300/udp.
+- Verifikasi pasca-install: `ss -tlnp` (bukan `-ulnp`) supaya listener TCP terlihat.
+- UFW 7300/tcp dibuka manual di VPS live 43.133.36.16 -> klien TCP 7300 TERBUKA (terverifikasi dari luar).
+
 ## v1.16.6 — fix /etc/timezone tak ikut WIB
 
 ### Fixed

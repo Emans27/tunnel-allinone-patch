@@ -5462,7 +5462,12 @@ setup_ufw() {
   # UDP yang WAJIB terbuka: 7300 (UDPGW/badvpn publik, HTTP Custom), 53+5300
   # (SlowDNS), OPENVPN_UDP_PORT. Daftar port di ports.conf, tapi 7300 selalu
   # dibuka karena wrapper udpgw memang bind 0.0.0.0:7300.
-  for _p in 7300; do ufw allow "$_p/udp" >/dev/null 2>&1 || true; done
+  # 7300 dibuka utk TCP dan UDP: badvpn-udpgw default menerima koneksi TCP dari
+  # klien (HTTP Custom/KPN), bukan UDP. UDP ikut dibuka hanya utk jaga-jaga.
+  for _p in 7300; do
+    ufw allow "$_p/tcp" >/dev/null 2>&1 || true
+    ufw allow "$_p/udp" >/dev/null 2>&1 || true
+  done
   for var in SLOWDNS_PORT OPENVPN_UDP_PORT; do
     val="${!var}" 2>/dev/null || true; [ -z "${val+x}" ] && continue
     [ -z "$val" ] && continue
@@ -7869,15 +7874,18 @@ SVC_EOF
   chmod 644 "$svc" 2>/dev/null || true
   echo -e "${GREEN}Service: $svc${RESET}"
 
-  # UFW: UDP/7300 publik (HTTP Custom & klien badvpn menembak langsung)
+  # UFW: TCP/7300 publik (badvpn-udpgw default menerima koneksi TCP dari
+  # HTTP Custom/KPN — bukan UDP; UDP dibuka juga utk jaga-jaga)
   if [ -z "$BASE" ]; then
     if command -v ufw >/dev/null 2>&1; then
+      ufw allow 7300/tcp >/dev/null 2>&1 || true
       ufw allow 7300/udp >/dev/null 2>&1 || true
-      echo -e "${GREEN}UFW: 7300/udp dibuka${RESET}"
+      echo -e "${GREEN}UFW: 7300/tcp + 7300/udp dibuka${RESET}"
     fi
   else
-    echo -e "${YELLOW}[TEST MODE] UFW 7300/udp simulasi${RESET}"
+    echo -e "${YELLOW}[TEST MODE] UFW 7300/tcp+udp simulasi${RESET}"
     mkdir -p "${BASE}/var/log" 2>/dev/null || true
+    echo "allow 7300/tcp" >> "${BASE}/var/log/ufw-sim.log" 2>/dev/null || true
     echo "allow 7300/udp" >> "${BASE}/var/log/ufw-sim.log" 2>/dev/null || true
     sort -u "${BASE}/var/log/ufw-sim.log" -o "${BASE}/var/log/ufw-sim.log" 2>/dev/null || true
   fi
@@ -7897,7 +7905,7 @@ SVC_EOF
     else
       echo -e "${YELLOW}UDPGW belum aktif, cek: journalctl -u mytunnel-udpgw -n 20${RESET}"
     fi
-    ss -ulnp 2>/dev/null | grep -E ":7300 " | head -n 5 || true
+    ss -tlnp 2>/dev/null | grep -E ":7300 " | head -n 5 || true
   fi
   echo -e "${GREEN}[udpgw] Selesai: UDP/7300 publik (HTTP Custom ready)${RESET}" | tee -a "$LOG" 2>/dev/null || true
 }
@@ -8081,10 +8089,24 @@ JSONEOF
   cat > "${BASE}/etc/systemd/system/${SERVICE}.service" <<SVCEOF
 [Unit]
 Description=mytunnel UDP-Custom (ePro v1.4) listen :${LISTEN_PORT}
-After=network.target
+After=network-pre.target zivpn.service
+Before=zivpn.service
+Wants=network-pre.target
+DefaultDependencies=no
 
 [Service]
 Type=simple
+# PENTING: binary udp-custom (zhets v1.4) TIDAK memasang iptables DNAT sendiri
+# (tidak ada string iptables di dalam binary), meski komentar lama mengira sebaliknya.
+# Tanpa DNAT, rentang 1-65535 mati -> klien "host:1-65535@user:pass" (SSH UDP /
+# HTTP Custom) tak bisa konek. Karena itu DNAT dipasang DI SINI.
+# ZiVPN WAJIB di-ACCEPT lebih dulu agar tak tertelan redirect 1-65535.
+ExecStartPre=-/bin/bash -c '\
+iptables -t nat -C PREROUTING -p udp --dport ${LISTEN_PORT} -j ACCEPT 2>/dev/null || \
+iptables -t nat -I PREROUTING -p udp --dport ${LISTEN_PORT} -j ACCEPT; \
+iptables -t nat -C PREROUTING -p udp --dport 1:65535 -j REDIRECT --to-ports ${LISTEN_PORT} 2>/dev/null || \
+iptables -t nat -A PREROUTING -p udp --dport 1:65535 -j REDIRECT --to-ports ${LISTEN_PORT}'
+ExecStop=-/bin/bash -c 'iptables -t nat -D PREROUTING -p udp --dport 1:65535 -j REDIRECT --to-ports ${LISTEN_PORT} 2>/dev/null; iptables -t nat -D PREROUTING -p udp --dport ${LISTEN_PORT} -j ACCEPT 2>/dev/null'
 ExecStart=${UDP_CUSTOM_BIN} server --config ${CONF} --exclude ${EXCLUDE_PORTS}
 WorkingDirectory=$(dirname "$CONF")
 Restart=always
@@ -15835,7 +15857,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v1.16.6"
+_mt_version="v1.16.8"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')
