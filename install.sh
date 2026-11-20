@@ -15611,17 +15611,26 @@ render_login_dashboard(){
   # 1b) status bar CPU / RAM / SSD (total & sisa)
   local _cpu _cpu_free _ram_tot _ram_av _ram_used _ram_p _ram_det
   local _dsk_tot _dsk_used _dsk_free _dsk_p _dsk_det
-  _cpu=$(top -bn2 -d 0.1 2>/dev/null | awk '/^%Cpu/ {i=$2+$4+$6+$12+$14+$15; l=100-i} END{printf "%.0f", l}')
-  [ -z "$_cpu" ] && _cpu=0; [ "$_cpu" -gt 100 ] && _cpu=100; _cpu_free=$(( 100 - _cpu ))
+  # CPU: baca /proc/stat 2x (metode htop). Parsing 'top' TIDAK stabil — offset
+  # field bergeser saat ada spike. Grep baris "cpu" agregat: dua `read` ke file
+  # sama share FD (yang ke-2 nyasar ke baris cpu0 per-core).
+  _cpl=$(grep '^cpu ' /proc/stat); set -- $_cpl
+  _u1=$2; _n1=$3; _s1=$4; _i1=$5; _w1=$6; _ir1=$7; _so1=$8; _st1=$9
+  sleep 0.5
+  _cpl=$(grep '^cpu ' /proc/stat); set -- $_cpl
+  _u2=$2; _n2=$3; _s2=$4; _i2=$5; _w2=$6; _ir2=$7; _so2=$8; _st2=$9
+  _dt=$(( (_u2+_n2+_s2+_i2+_w2+_ir2+_so2+_st2) - (_u1+_n1+_s1+_i1+_w1+_ir1+_so1+_st1) ))
+  [ "$_dt" -gt 0 ] && _cpu=$(( 100 - 100*(_i2-_i1)/_dt )) || _cpu=0
+  [ "$_cpu" -lt 0 ] && _cpu=0; [ "$_cpu" -gt 100 ] && _cpu=100; _cpu_free=$(( 100 - _cpu ))
   read -r _ram_tot _ram_av <<< "$(free -m 2>/dev/null | awk '/^Mem:/ {a=($7>0?$7:$4); print $2" "a}')"
   [ -z "$_ram_tot" ] && _ram_tot=0; [ -z "$_ram_av" ] && _ram_av=0
   _ram_used=$(( _ram_tot - _ram_av )); [ "$_ram_used" -lt 0 ] && _ram_used=0
   [ "$_ram_tot" -gt 0 ] && _ram_p=$(( _ram_used * 100 / _ram_tot )) || _ram_p=0
-  _ram_det=$(printf '%dM/%dM' "$_ram_tot" "$_ram_av")
+  _ram_det=$(awk -v t="$_ram_tot" -v a="$_ram_av" 'BEGIN{printf "%.1fG/%.1fG", t/1024, a/1024}')
   read -r _dsk_tot _dsk_used _dsk_free <<< "$(df -Pm / 2>/dev/null | awk 'NR==2 {print $2" "$3" "$4}')"
   [ -z "$_dsk_tot" ] && _dsk_tot=0; [ -z "$_dsk_free" ] && _dsk_free=0
   [ "$_dsk_tot" -gt 0 ] && _dsk_p=$(( _dsk_used * 100 / _dsk_tot )) || _dsk_p=0
-  _dsk_det=$(printf '%dM/%dM' "$_dsk_tot" "$_dsk_free")
+  _dsk_det=$(awk -v t="$_dsk_tot" -v f="$_dsk_free" 'BEGIN{printf "%.1fG/%.1fG", t/1024, f/1024}')
 
   _box_top
   _resbar_row "CPU" "$_cpu" "$(printf '%d%% free' "$_cpu_free")"
