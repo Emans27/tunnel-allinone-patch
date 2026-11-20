@@ -1,3 +1,19 @@
+## v1.16.2 — perbaiki tampilan & error diam bot
+
+### Fixed
+- `send_msg` kini pakai `parse_mode=HTML` + fallback plain saat parse gagal
+  (sebelumnya tag `<b>/<code>` tampil mentah, pesan terlihat kacau)
+- `send_kb`: cek `ok` Telegram; bila gagal kirim plain + log alasan
+  (sebelumnya error diam `|| true`)
+- `edit_msg`: fallback kirim pesan baru bila edit gagal (teks sama/timeout)
+- Keyboard menu **3 -> 2 tombol per baris** (4 baris) biar lega di HP
+
+### Verified (live 43.128.104.92)
+- Keyboard menu: 4 baris x 2 tombol (Create|Delete, Renew|Trial, Status|List, Backup|Bantuan)
+- Kirim menu via API nyata -> `ok:true`, message_id 1416
+- Log bersih, tak ada send_kb error / Bad Request
+- `mytunnel-bot` active
+
 ## v1.16.1 — bot menu tombol + wizard
 
 ### Added

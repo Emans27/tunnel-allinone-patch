@@ -12119,17 +12119,36 @@ ah_log "bot polling offset=$OFFSET"
 
 send_msg(){
   local chat_id="$1" text="$2"
-  curl -4 -fsS --max-time 15 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" -d "chat_id=${chat_id}" --data-urlencode "text=${text}" >/dev/null 2>&1 || true
+  # parse_mode=HTML: tag <b>/<i>/<code> tampil rapi di Telegram
+  curl -4 -fsS --max-time 15 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+    -d "chat_id=${chat_id}" --data-urlencode "text=${text}" \
+    --data-urlencode "parse_mode=HTML" \
+    >/dev/null 2>&1 || {
+      # fallback tanpa HTML jika parse error (mis. tag tak seimbang)
+      curl -4 -fsS --max-time 15 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        -d "chat_id=${chat_id}" --data-urlencode "text=${text}" >/dev/null 2>&1 || true
+    }
 }
 # kirim pesan + inline keyboard (reply_markup). $3 = JSON reply_markup
 send_kb(){
   local chat_id="$1" text="$2" markup="$3"
-  local body
+  local body resp
   body=$(jq -n --arg chat "$chat_id" --arg text "$text" --argjson rm "$markup" \
-    '{chat_id:$chat, text:$text, reply_markup:$rm, parse_mode:"HTML"}' 2>/dev/null) || true
-  [ -z "$body" ] && { send_msg "$chat_id" "$text"; return; }
-  curl -4 -fsS --max-time 15 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-    -H "Content-Type: application/json" -d "$body" >/dev/null 2>&1 || true
+    '{chat_id:$chat, text:$text, reply_markup:$rm, parse_mode:"HTML"}' 2>/dev/null)
+  if [ -z "$body" ]; then
+    # markup invalid → fallback send_msg biasa (tanpa keyboard)
+    send_msg "$chat_id" "$text"
+    return
+  fi
+  resp=$(curl -4 -fsS --max-time 15 "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+    -H "Content-Type: application/json" -d "$body" 2>&1)
+  local ok
+  ok=$(echo "$resp" | jq -r '.ok // empty' 2>/dev/null)
+  if [ "$ok" != "true" ]; then
+    # HTML parse error atau markup rusak → kirim plain tanpa keyboard
+    ah_log "send_kb error: $(echo "$resp" | jq -r '.description // "unknown"' 2>/dev/null | head -c 200)"
+    send_msg "$chat_id" "$text"
+  fi
 }
 # jawab callback (hilangkan jam pasir di tombol) + edit menu jadi hasil
 answer_cb(){
@@ -12138,10 +12157,16 @@ answer_cb(){
     -d "callback_query_id=${cb_id}" --data-urlencode "text=${text}" >/dev/null 2>&1 || true
 }
 edit_msg(){
-  local chat_id="$1" mid="$2" text="$3"
-  curl -4 -fsS --max-time 15 "https://api.telegram.org/bot${BOT_TOKEN}/editMessageText" \
+  local chat_id="$1" mid="$2" text="$3" resp
+  resp=$(curl -4 -fsS --max-time 15 "https://api.telegram.org/bot${BOT_TOKEN}/editMessageText" \
     -d "chat_id=${chat_id}" -d "message_id=${mid}" --data-urlencode "text=${text}" \
-    --data-urlencode "parse_mode=HTML" >/dev/null 2>&1 || true
+    --data-urlencode "parse_mode=HTML" 2>&1)
+  local ok
+  ok=$(echo "$resp" | jq -r '.ok // empty' 2>/dev/null)
+  if [ "$ok" != "true" ]; then
+    # fallback: kirim pesan baru tanpa HTML (edit kadang gagal bila teks sama/timeout)
+    send_msg "$chat_id" "$text"
+  fi
 }
 # state wizard: file per admin, isi "kunci=nilai" per baris
 STATE_FILE="$ETC/bot/state_${ADMIN_ID}.txt"
@@ -12479,8 +12504,9 @@ HELP
 
 bh_main_menu_kb(){
   printf '%s' '{"inline_keyboard":[
-    [{"text":"➕ Create","callback_data":"m:create"},{"text":"🗑 Delete","callback_data":"m:delete"},{"text":"🔄 Renew","callback_data":"m:renew"}],
-    [{"text":"🎁 Trial","callback_data":"m:trial"},{"text":"📊 Status","callback_data":"m:status"},{"text":"📋 List","callback_data":"m:list"}],
+    [{"text":"➕ Create","callback_data":"m:create"},{"text":"🗑 Delete","callback_data":"m:delete"}],
+    [{"text":"🔄 Renew","callback_data":"m:renew"},{"text":"🎁 Trial","callback_data":"m:trial"}],
+    [{"text":"📊 Status","callback_data":"m:status"},{"text":"📋 List","callback_data":"m:list"}],
     [{"text":"💾 Backup","callback_data":"m:backup"},{"text":"❓ Bantuan","callback_data":"m:help"}]
   ]}'
 }
@@ -16124,7 +16150,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v1.16.1"
+_mt_version="v1.16.2"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')
