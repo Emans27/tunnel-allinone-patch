@@ -2613,10 +2613,10 @@ dispatch() {
 
 while true; do
   show_header
+  show_resbar
   show_sysinfo
   show_status
   show_version
-  show_resbar
   show_menu
   echo -ne "${BOLD}Select From Options [1-10 or x] : ${RESET}"
   read -r choice || break
