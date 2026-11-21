@@ -1,3 +1,16 @@
+## v2026.11.21 — penyesuaian penomoran versi (kalender)
+
+Perubahan penomoran saja: `v1.17.0` -> `v2026.11.21` (tahun.bulan.tanggal).
+Fungsional identik dengan `v1.17.0` — hanya `VERSION`, `_mt_version` di
+`install.sh`, dan judul rilis yang berubah.
+
+ Isi fungsional rilis sebelumnya (tetap berlaku):
+- verify.sh cek SSH-TLS rute final-443 (`4443`, fallback `:444`), bukan lagi `:444`
+- UDP stack otomatis (ZiVPN + UDPGW + UDP-Custom)
+- DNAT `1-65535 -> 36712` dipasang unit `udp-custom.service`
+- ufw buka `7300/tcp` + `7300/udp`
+- TZ `Asia/Jakarta` ditulis ke `/etc/localtime` + `/etc/timezone`
+
 ## v1.17.0 — verify.sh: cek SSH-TLS rute baru (4443), bukan :444 warisan
 
 ### Root cause (verify "SSH-TLS :444 tertutup" walau SSH-TLS jalan)
