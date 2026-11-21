@@ -1,3 +1,24 @@
+## v1.17.0 — verify.sh: cek SSH-TLS rute baru (4443), bukan :444 warisan
+
+### Root cause (verify "SSH-TLS :444 tertutup" walau SSH-TLS jalan)
+Arsitektur final-443 mengubah jalur SSH-TLS:
+```
+:443 (nginx stream, default map) -> 127.0.0.1:4443 (stunnel) -> 127.0.0.1:1443 -> SSH :22
+```
+stunnel kini listen di `127.0.0.1:4443`, port `:444` warisan **tidak lagi dipakai**.
+Tapi `verify.sh` masih meng-hardcode `SSH_TLS_PORT=444`, jadi pada VPS final-443
+selalu melapor `SSH-TLS :444 tertutup` -> 1 FAIL palsu walau layanan hidup normal.
+
+### Fixed
+- `verify.sh` kini default cek `127.0.0.1:4443` (rute final-443), dengan fallback
+  ke `:444` untuk VPS yang belum bermigrasi. Pesan FAIL menyebutkan juga
+  "cek map default di nginx.conf -> 4443".
+- Pesan PASS menjelaskan rute: `SSH-TLS :4443 terbuka (stunnel -> 1443 -> SSH)`.
+
+### Diverifikasi di VPS 43.128.104.92
+- `verify.sh` kini **18 PASS, 0 FAIL** (sebelumnya 17 PASS / 1 FAIL).
+- stunnel `active` listen `127.0.0.1:4443`, `1443` aktif (wrapper ke SSH :22).
+
 ## v1.16.9 — UDP stack otomatis semua (UDPGW + UDP-Custom tak lagi opt-in)
 
 ### Keputusan pemilik (2026-11-20)

@@ -15857,7 +15857,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v1.16.9"
+_mt_version="v1.17.0"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')
@@ -17165,9 +17165,23 @@ if command -v curl >/dev/null 2>&1; then
   if [ "$code" = "101" ]; then p "SSH-WS /ssh-ws = 101"
   else f "SSH-WS /ssh-ws = ${code:-none} (harus 101)" "cek location /ssh-ws di mytunnel-locations.inc + 10004"; fi
 fi
-SSH_TLS_PORT="${SSH_TLS_PORT:-444}"
-if timeout 5 bash -c "echo > /dev/tcp/127.0.0.1/${SSH_TLS_PORT}" 2>/dev/null; then p "SSH-TLS :${SSH_TLS_PORT} terbuka"
-else f "SSH-TLS :${SSH_TLS_PORT} tertutup" "systemctl status stunnel4; systemctl restart stunnel4"; fi
+# SSH-TLS: arsitektur final-443 memakai stunnel 127.0.0.1:4443 yang
+# menjadi backend default nginx stream :443 (lihat /etc/nginx/nginx.conf:
+# map $tls443_backend default 127.0.0.1:4443 -> stunnel -> 1443 -> SSH :22).
+# Port :444 adalah warisan lama dan TIDAK lagi dipakai, tapi tetap diterima
+# sebagai fallback untuk VPS yang belum bermigrasi.
+SSH_TLS_PORT="${SSH_TLS_PORT:-4443}"
+_tls_ok=0
+if timeout 5 bash -c "echo > /dev/tcp/127.0.0.1/${SSH_TLS_PORT}" 2>/dev/null; then
+  p "SSH-TLS :${SSH_TLS_PORT} terbuka (stunnel -> 1443 -> SSH)"
+  _tls_ok=1
+elif timeout 5 bash -c "echo > /dev/tcp/127.0.0.1/444" 2>/dev/null; then
+  p "SSH-TLS :444 terbuka (legacy)"
+  _tls_ok=1
+fi
+if [ "$_tls_ok" -eq 0 ]; then
+  f "SSH-TLS :${SSH_TLS_PORT} tertutup" "systemctl status stunnel4; systemctl restart stunnel4; cek map default di nginx.conf -> 4443"
+fi
 if timeout 5 bash -c "echo > /dev/tcp/127.0.0.1/22" 2>/dev/null; then p "SSH :22 terbuka"
 else _r "${YELLOW}SKIP${RESET}  SSH :22 (open-ssh mungkin di port lain)"; fi
 
