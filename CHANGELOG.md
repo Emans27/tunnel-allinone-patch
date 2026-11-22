@@ -1,3 +1,15 @@
+## v2026.11.22b — menu SSH "Check Users Login" akurat
+
+Bug: opsi 6 menu SSH menghitung sesi via `ps -u <user>`, padahal Dropbear 2019
+tidak turun hak ke user (anak tetap root) sehingga selalu "0 PID / No Usage".
+
+- Helper baru `_ssh_session_count()`: PID anak dropbear (PPID != 1) dipetakan
+  ke username lewat `/var/log/auth.log` (`Password auth succeeded for '<user>'`).
+- Sesi OpenSSH (admin) tetap dihitung dari owner proses sshd.
+- Diuji live: `suneke` tampil `Online 2 PID`, akun idle tetap `0 PID`,
+  user tak dikenal tidak dihitung.
+- `lr_ssh_rows()` login-report (v2026.11.22) memakai metode yang sama.
+
 ## v2026.11.22 — perbaikan hitungan PID/sesi SSH di login-report
 
 Bug: `lr_ssh_rows()` menghitung sesi Dropbear dari kolom user `ps`, padahal

@@ -3036,6 +3036,31 @@ do_edit_limit_all() {
   echo -ne "${GREY}Enter...${RESET}"; read -r _
 }
 
+_ssh_session_count() {
+  local target="$1" authlog="/var/log/auth.log"
+  ps -eo pid,ppid,user,comm,args --no-headers 2>/dev/null | awk -v target="$target" -v authlog="$authlog" '
+    BEGIN{ n=0 }
+    $4=="sshd" && $3==target && $3!="root" { n++; next }
+    ($4=="dropbear" || $5 ~ /dropbear/) && $2!=1 { dpids[$1]=1 }
+    END{
+      if(authlog != ""){
+        q=sprintf("%c",39)
+        rx="Password auth succeeded for " q target q " from"
+        while((getline line < authlog)>0){
+          if(line !~ /dropbear\[/) continue
+          if(index(line, "Password auth succeeded for")==0) continue
+          p=""; s=""
+          if(match(line, /dropbear\[[0-9]+\]/)) p=substr(line, RSTART+9, RLENGTH-10)
+          if(match(line, rx)) s=target
+          if(p!="" && s!="") owner[p]=s
+        }
+        close(authlog)
+      }
+      for(p in dpids) if(owner[p]==target) n++
+      print n
+    }'
+}
+
 do_check_login() {
   clear 2>/dev/null || true
   local brand
@@ -3057,8 +3082,10 @@ do_check_login() {
       [ -z "$user" ] && continue
       user=$(echo "$user" | tr -d '\r')
       local cnt usage_str total_str
-      # Jumlah proses sshd/dropbear milik user (bukan history, bukan systemd)
-      cnt=$(ps -u "$user" -o comm= 2>/dev/null | grep -Ec '^(sshd|dropbear)$')
+      # Dropbear 2019 di build ini tidak turun hak (anak tetap root), jadi
+      # ps -u <user> selalu kosong. Hitung sesi via PID anak dropbear yang
+      # dipetakan ke username dari log auth (Password auth succeeded).
+      cnt=$(_ssh_session_count "$user")
       [[ "$cnt" =~ ^[0-9]+$ ]] || cnt=0
       if [ "$cnt" -gt 0 ]; then
         usage_str="Online"
@@ -3076,6 +3103,35 @@ do_check_login() {
   echo -e "${BLUE}└──────────────────────────────────────────────────────────┘${RESET}"
   echo ""
   echo -ne "${GREY}Press Enter for Back to Manage${RESET}"; read -r _
+}
+
+# Hitung sesi SSH aktif milik <user>:
+#  - Dropbear: PID anak dropbear (PPID != 1) yang di auth.log tercatat
+#    "Password auth succeeded for '<user>'" (entri terbaru menang).
+#  - OpenSSH: proses sshd milik user (jalur admin).
+_ssh_session_count() {
+  local target="$1" authlog="/var/log/auth.log"
+  ps -eo pid,ppid,user,comm,args --no-headers 2>/dev/null | awk -v target="$target" -v authlog="$authlog" '
+    BEGIN{ n=0 }
+    $4=="sshd" && $3==target && $3!="root" { n++; next }
+    ($4=="dropbear" || $5 ~ /dropbear/) && $2!=1 { dpids[$1]=1 }
+    END{
+      if(authlog != ""){
+        q=sprintf("%c",39)
+        rx="Password auth succeeded for " q target q " from"
+        while((getline line < authlog)>0){
+          if(line !~ /dropbear\[/) continue
+          if(index(line, "Password auth succeeded for")==0) continue
+          p=""; s=""
+          if(match(line, /dropbear\[[0-9]+\]/)) p=substr(line, RSTART+9, RLENGTH-10)
+          if(match(line, rx)) s=target
+          if(p!="" && s!="") owner[p]=s
+        }
+        close(authlog)
+      }
+      for(p in dpids) if(owner[p]==target) n++
+      print n
+    }'
 }
 
 do_list() {
@@ -15880,7 +15936,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v2026.11.22"
+_mt_version="v2026.11.22b"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')
