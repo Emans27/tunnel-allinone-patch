@@ -9229,7 +9229,7 @@ cat > "$ETC/logrotate.d/mytunnel" << '__EMBED_EOF__'
     delaycompress
     missingok
     notifempty
-    create 644 nobody nogroup
+    create 644 xray xray
     postrotate
         systemctl restart xray 2>/dev/null || true
     endscript
@@ -15936,7 +15936,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v2026.11.22b"
+_mt_version="v2026.11.22c"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')

@@ -1,3 +1,15 @@
+## v2026.11.22c — fix xray mati setelah logrotate (permission denied)
+
+Bug: blok logrotate `/var/log/xray/*.log` memakai `create 644 nobody nogroup`.
+Setelah rotasi jam 00:15, file log baru dimiliki `nobody`, sedangkan unit
+xray berjalan sebagai `User=xray` → `open access.log: permission denied` →
+xray gagal start (exit 23) dan restart-loop.
+
+- `create` diganti `644 xray xray`.
+- File live di VPS diperbaiki (`chown xray:xray`) + xray kembali `active`.
+- Terjadi setiap kali logrotate harian jalan — sebelumnya terselubung karena
+  cron root jam 02:00 me-restart xray lagi (menutupi gejala beberapa jam).
+
 ## v2026.11.22b — menu SSH "Check Users Login" akurat
 
 Bug: opsi 6 menu SSH menghitung sesi via `ps -u <user>`, padahal Dropbear 2019
