@@ -1,3 +1,15 @@
+## v2026.11.22 — perbaikan hitungan PID/sesi SSH di login-report
+
+Bug: `lr_ssh_rows()` menghitung sesi Dropbear dari kolom user `ps`, padahal
+proses anak Dropbear 2019 di build ini tidak turun hak (tetap `root`) sehingga
+semua sesi terlewat dan blok "Users Login SSH" selalu kosong.
+
+- Sesi Dropbear kini dihitung dari PID proses anak (PPID != 1) yang dipetakan
+  ke username lewat log auth (`dropbear[<pid>]: Password auth succeeded for '<user>'`).
+- Hanya PID yang masih hidup dan user-nya `active` di db yang dihitung.
+- Sesi OpenSSH (sshd) tetap dibaca dari nama user di args.
+- Diuji di VPS Debian 13: 4 sesi `suneke` terdeteksi benar; laporan terkirim.
+
 ## v2026.11.21 — penyesuaian penomoran versi (kalender)
 
 Perubahan penomoran saja: `v1.17.0` -> `v2026.11.21` (tahun.bulan.tanggal).

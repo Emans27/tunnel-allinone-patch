@@ -10849,16 +10849,16 @@ lr_isp(){
 # anak "sshd: <user>" (EUID=<user>) = 1 sesi juga. Dropbear: 1 proses = 1 sesi.
 # Keluaran baris: "<user> <sesi>"
 lr_ssh_rows(){
-  local minuid sysusers line u
-  minuid=$(awk '/^UID_MIN/{print $2}' /etc/login.defs 2>/dev/null); [ -z "$minuid" ] && minuid=1000
-  # hanya akun yang terdaftar di db mytunnel → root@notty / user sistem tidak ikut
-  # format ssh.txt: user|pass|expiry|limit_ip|status
-  ps -eo user:32,args --no-headers 2>/dev/null | awk -v db="/etc/mytunnel/db/ssh.txt" '
+  # Sesi SSH aktif per user. Dropbear 2019 di build ini TIDAK turun hak ke user
+  # (semua proses anak tetap root), jadi kolom user ps TIDAK bisa dipakai.
+  # Pendekatan: PID proses anak dropbear (PPID != 1) dipetakan ke username
+  # lewat log auth "dropbear[<pid>]: Password auth succeeded for '<user>'".
+  # Sesi sshd (OpenSSH) tetap dibaca dari nama user di args.
+  ps -eo pid,ppid,user,args --no-headers 2>/dev/null | awk -v db="/etc/mytunnel/db/ssh.txt" -v authlog="/var/log/auth.log" '
     BEGIN{
       while((getline line < db)>0){
         if(line=="" || line ~ /^#/) continue
         n=split(line, f, "|")
-        # status = kolom status terakhir (ssh.txt: user|pass|expiry|limit_ip|status)
         st = (n>=5 ? f[n] : "")
         if(f[1]=="" || st !~ /active/) continue
         known[f[1]]=1
@@ -10871,8 +10871,31 @@ lr_ssh_rows(){
       if(!priv && u!="" && u!="root" && u!~/^\/usr\/sbin\/sshd$/ && (u in known)) cnt[u]++
       next
     }
-    $0 ~ /dropbear/ { u=$1; if(u!="" && u!="root" && (u in known)) cnt[u]++ }
-    END{ for(u in cnt) print u, cnt[u] }
+    $0 ~ /dropbear/ {
+      if($2==1) next                      # proses induk (listener), bukan sesi
+      pid[$1]=1
+      next
+    }
+    END{
+      # petakan PID sesi -> username dari log auth terbaru
+      if(authlog != ""){
+        while((getline line < authlog)>0){
+          if(line !~ /dropbear\[/) continue
+          if(line !~ /Password auth succeeded/) continue
+          pid_s=""; user_s=""
+          if(match(line, /dropbear\[[0-9]+\]/)) pid_s=substr(line, RSTART+9, RLENGTH-10)
+          q=sprintf("%c",39)
+          if(match(line, "Password auth succeeded for " q "[^" q "]+" q)){
+            user_s=substr(line, RSTART+29, RLENGTH-30)
+          }
+          if(pid_s=="" || user_s=="") continue
+          if(user_s in known) owner[pid_s]=user_s
+        }
+        close(authlog)
+      }
+      for(p in pid) if(p in owner) cnt[owner[p]]++
+      for(u in cnt) print u, cnt[u]
+    }
   ' | sort -k1,1
 }
 
@@ -15857,7 +15880,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v2026.11.21"
+_mt_version="v2026.11.22"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')
