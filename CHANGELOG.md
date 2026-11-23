@@ -1,3 +1,20 @@
+## v2026.11.23b — cron/quota.sh: parser statsquery JSON
+
+Bug: `cron/quota.sh` (tiap 1 menit) mem-parse keluaran `xray api statsquery`
+dengan regex `user>>>EMAIL>>>traffic>>>uplink: value`. Keluaran `statsquery`
+sebenarnya JSON, jadi regex tak pernah cocok → kolom `used_bytes` di
+`/etc/mytunnel/db/{vmess,vless,trojan}.txt` tak pernah tercatat → kolom
+`Kuota`/`Terpakai` di notif login-report selalu `0GB`, dan pengunci kuota tak
+pernah berjalan.
+
+Fix: parse JSON via `jq` (loop `.stat[] | name/value`), ambil uplink+downlink
+per email, lalu tulis ke kolom 6 DB seperti sebelumnya. Tanpa `jq`, cycle
+di-skip (bukan di-silence) supaya kegagalan terlihat.
+
+Diverifikasi di VPS `43.133.36.16`: kolom 6 `suneku-vless` naik 19MB → 620MB
+setelah patch. Pemakaian kuota **tidak** kembali ke 0 saat reboot/restart xray,
+karena total kumulatif disimpan di disk (counter memori Xray hanya delta 1 menit).
+
 ## v2026.11.23 — access.log Xray catat IP asli klien (di balik Cloudflare)
 
 Semua inbound Xray duduk di balik nginx/Cloudflare, jadi Xray hanya melihat

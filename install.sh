@@ -11930,19 +11930,28 @@ run_once() {
   bin=$(_xray_bin); port=$(_get_api_port)
   # cek api reachable; jika tidak ada binary atau api down -> skip
   if ! command -v "$bin" >/dev/null 2>&1 && [ ! -x "$bin" ]; then return 0; fi
-  # pastikan policy stats aktif; jika belum, coba patch (best-effort)
-  # statsquery with -reset returns lines like: user>>>alice>>>traffic>>>uplink: 123
+  # CATATAN: `xray api statsquery` mengembalikan JSON, bukan "name: value" satu baris.
+  # Parser regex lama TIDAK PERNAH cocok -> used_bytes di DB tak pernah tercatat ->
+  # kolom Kuota/Terpakai di notif login-report selalu "0GB". Parse JSON via jq.
   raw=$("$bin" api statsquery --server="127.0.0.1:${port}" -reset 2>/dev/null || true)
   [ -z "$raw" ] && return 0
   # kumpulkan per user: uplink + downlink
   declare -A sum
-  while IFS= read -r line; do
-    # format: user>>>EMAIL>>>traffic>>>uplink: value  OR  user>>>EMAIL>>>traffic>>>downlink: value
-    if [[ "$line" =~ user\>\>\>([^>]+)\>\>\>traffic\>\>\>(uplink|downlink):[[:space:]]*([0-9]+) ]]; then
-      local email="${BASH_REMATCH[1]}" val="${BASH_REMATCH[3]}"
+  if command -v jq >/dev/null 2>&1; then
+    while IFS=$'\t' read -r email _typ val; do
+      [ -n "$email" ] || continue
+      [[ "$val" =~ ^[0-9]+$ ]] || continue
       sum["$email"]=$(( ${sum["$email"]:-0} + val ))
-    fi
-  done <<< "$raw"
+    done < <(printf '%s' "$raw" | jq -r '
+      .stat[]? | select(.name | startswith("user>>>"))
+      | .name as $n
+      | ($n | split(">>>")) as $p
+      | "\($p[1])\t\($p[-1])\t\(.value // 0)"
+    ' 2>/dev/null)
+  else
+    # tanpa jq: tidak ada cara aman parse JSON di bash murni -> skip cycle ini
+    return 0
+  fi
 
   local email total proto quota used quota_bytes key
   for email in "${!sum[@]}"; do
@@ -15954,7 +15963,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v2026.11.23"
+_mt_version="v2026.11.23b"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')
