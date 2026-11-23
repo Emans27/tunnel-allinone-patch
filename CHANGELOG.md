@@ -1,3 +1,28 @@
+## v2026.11.23 — access.log Xray catat IP asli klien (di balik Cloudflare)
+
+Semua inbound Xray duduk di balik nginx/Cloudflare, jadi Xray hanya melihat
+`127.0.0.1`. Akibatnya `/var/log/xray/access.log` selalu `from 127.0.0.1:*`
+→ kolom `On` / `Online` di menu VMESS/VLESS/TROJAN (hitung IP unik per email)
+menampilkan 0 atau 1 untuk semua akun.
+
+Fix pada installer:
+- Blok `http` nginx.conf embed: tambah `log_format realip` (kolom-3 = `$cf_ip`)
+  + `map $http_cf_connecting_ip $cf_ip`, `access_log … realip`.
+- `proxy_set_header X-Real-IP` → `$cf_ip` (14 lokasi).
+- `proxy_set_header X-Forwarded-For` → `$cf_ip` (14 lokasi).
+- Post-processing jq config Xray: set `streamSettings.sockopt.trustedXForwardedFor
+  = ["CF-Connecting-IP","X-Forwarded-For"]` untuk semua inbound non-api.
+- `sshws.py` embed: log header sekarang menyertakan `realip=<X-Real-IP>`.
+
+Fix live di VPS `43.133.36.16` (sudah diverifikasi):
+- `/etc/nginx/nginx.conf` diberi `log_format realip` + `map $cf_ip`; nginx reload.
+- `/etc/nginx/conf.d/mytunnel.conf` + `mytunnel-locations.inc`: `X-Real-IP` & `X-Forwarded-For` → `$cf_ip`.
+- `/usr/local/etc/xray/config.json`: 12 inbound non-api kini punya `sockopt.trustedXForwardedFor`.
+- xray direstart (sudah `active`). Access.log kini berisi IP HP asli, contoh:
+  `182.2.41.213` (179 hit), `140.213.5.54` (83), `140.213.163.112` (58) dalam
+  500 baris terakhir — sebelumnya 100% `127.0.0.1`.
+- Menu Xray "Online" per akun `suneku-vless@tunnel` kini menampilkan 14 IP unik.
+
 ## v2026.11.22c — fix xray mati setelah logrotate (permission denied)
 
 Bug: blok logrotate `/var/log/xray/*.log` memakai `create 644 nobody nogroup`.

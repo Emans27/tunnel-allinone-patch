@@ -6245,8 +6245,17 @@ CFG_EOF
       (.inbounds[] | select(.tag=="trojan-grpc") | .settings.clients) = $h |
       (.inbounds[] | select(.tag=="trojan-hu") | .settings.clients) = $i |
       .outbounds += $extra_out |
-      .routing.rules += $extra_rules
+      .routing.rules += $extra_rules |
+      (.inbounds[] | select(.protocol != "dokodemo-door") | .streamSettings.sockopt.trustedXForwardedFor) = ["CF-Connecting-IP","X-Forwarded-For"]
     ' "$XRAY_CFG" > "$tmp" 2>/dev/null && mv "$tmp" "$XRAY_CFG" || echo -e "${YELLOW}jq inject gagal, lanjut default${RESET}"
+  fi
+  # Real IP fixup juga untuk kasus tanpa jq (atau jq inject gagal): pastikan sockopt
+  # trustedXForwardedFor tersedia supaya access.log xray mencatat IP asli klien (di balik Cloudflare).
+  if command -v jq >/dev/null 2>&1; then
+    local tmp2="$XRAY_CFG.tmp2"
+    jq '
+      (.inbounds[] | select(.protocol != "dokodemo-door") | .streamSettings.sockopt.trustedXForwardedFor) = ["CF-Connecting-IP","X-Forwarded-For"]
+    ' "$XRAY_CFG" > "$tmp2" 2>/dev/null && mv "$tmp2" "$XRAY_CFG" || true
   fi
   chmod 644 "$XRAY_CFG" 2>/dev/null || true
   touch "$XRAY_LOGDIR/access.log" "$XRAY_LOGDIR/error.log" 2>/dev/null || true
@@ -6628,8 +6637,8 @@ location = /vmess {
   proxy_set_header Upgrade $http_upgrade;
   proxy_set_header Connection $connection_upgrade;
   proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Real-IP $cf_ip;
+  proxy_set_header X-Forwarded-For $cf_ip;
   proxy_read_timeout 3600s;
   proxy_buffering off;
   proxy_send_timeout 3600s;
@@ -6642,8 +6651,8 @@ location = /whatever {
   proxy_set_header Upgrade $http_upgrade;
   proxy_set_header Connection $connection_upgrade;
   proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Real-IP $cf_ip;
+  proxy_set_header X-Forwarded-For $cf_ip;
   proxy_read_timeout 3600s;
   proxy_buffering off;
   proxy_send_timeout 3600s;
@@ -6654,8 +6663,8 @@ location = /vless {
   proxy_set_header Upgrade $http_upgrade;
   proxy_set_header Connection $connection_upgrade;
   proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Real-IP $cf_ip;
+  proxy_set_header X-Forwarded-For $cf_ip;
   proxy_read_timeout 3600s;
   proxy_buffering off;
   proxy_send_timeout 3600s;
@@ -6666,8 +6675,8 @@ location = /trojan {
   proxy_set_header Upgrade $http_upgrade;
   proxy_set_header Connection $connection_upgrade;
   proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Real-IP $cf_ip;
+  proxy_set_header X-Forwarded-For $cf_ip;
   proxy_read_timeout 3600s;
   proxy_buffering off;
   proxy_send_timeout 3600s;
@@ -6678,8 +6687,8 @@ location = /upvmess {
   proxy_set_header Upgrade $http_upgrade;
   proxy_set_header Connection $connection_upgrade;
   proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Real-IP $cf_ip;
+  proxy_set_header X-Forwarded-For $cf_ip;
   proxy_read_timeout 3600s;
   proxy_buffering off;
   proxy_send_timeout 3600s;
@@ -6690,8 +6699,8 @@ location = /upvless {
   proxy_set_header Upgrade $http_upgrade;
   proxy_set_header Connection $connection_upgrade;
   proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Real-IP $cf_ip;
+  proxy_set_header X-Forwarded-For $cf_ip;
   proxy_read_timeout 3600s;
   proxy_buffering off;
   proxy_send_timeout 3600s;
@@ -6702,8 +6711,8 @@ location = /uptrojan {
   proxy_set_header Upgrade $http_upgrade;
   proxy_set_header Connection $connection_upgrade;
   proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Real-IP $cf_ip;
+  proxy_set_header X-Forwarded-For $cf_ip;
   proxy_read_timeout 3600s;
   proxy_buffering off;
   proxy_send_timeout 3600s;
@@ -6714,8 +6723,8 @@ location = /ssh-ws {
   proxy_set_header Upgrade $http_upgrade;
   proxy_set_header Connection $connection_upgrade;
   proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Real-IP $cf_ip;
+  proxy_set_header X-Forwarded-For $cf_ip;
   proxy_read_timeout 3600s;
   proxy_buffering off;
   proxy_send_timeout 3600s;
@@ -6728,8 +6737,8 @@ location /xvmess/ {
   proxy_pass http://127.0.0.1:10031;
   proxy_http_version 1.1;
   proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Real-IP $cf_ip;
+  proxy_set_header X-Forwarded-For $cf_ip;
   proxy_read_timeout 3600s;
   proxy_buffering off;
   proxy_send_timeout 3600s;
@@ -6740,8 +6749,8 @@ location /xvless/ {
   proxy_pass http://127.0.0.1:10032;
   proxy_http_version 1.1;
   proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Real-IP $cf_ip;
+  proxy_set_header X-Forwarded-For $cf_ip;
   proxy_read_timeout 3600s;
   proxy_buffering off;
   proxy_send_timeout 3600s;
@@ -6752,8 +6761,8 @@ location /xtrojan/ {
   proxy_pass http://127.0.0.1:10033;
   proxy_http_version 1.1;
   proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Real-IP $cf_ip;
+  proxy_set_header X-Forwarded-For $cf_ip;
   proxy_read_timeout 3600s;
   proxy_buffering off;
   proxy_send_timeout 3600s;
@@ -6774,6 +6783,12 @@ LOC_EOF
       cat > "$NGINX_MAIN" << 'MAIN_EOF'
 user www-data;
 worker_processes auto;
+# mytunnel realip: catat IP asli klien lewat Cloudflare ke log & ke upstream
+log_format realip '$remote_addr - $cf_ip [$time_local] "$request" $status $body_bytes_sent "$http_user_agent"';
+map $http_cf_connecting_ip $cf_ip {
+  default $http_cf_connecting_ip;
+  ""      $remote_addr;
+}
 pid /run/nginx.pid;
 include /etc/nginx/modules-enabled/*.conf;
 worker_rlimit_nofile 65535;
@@ -6782,7 +6797,7 @@ http {
   sendfile on;
   include /etc/nginx/mime.types;
   default_type application/octet-stream;
-  access_log /var/log/nginx/access.log;
+  access_log /var/log/nginx/access.log realip;
   error_log /var/log/nginx/error.log;
   include /etc/nginx/conf.d/*.conf;
 }
@@ -9309,7 +9324,10 @@ def handle_client(conn, addr):
         header=data[:idx]
         leftover=data[idx+4:]
         txt=header.decode(errors="ignore")
-        log(f"{addr} {txt.splitlines()[0] if txt else ''} len={len(data)} upgrade={'upgrade: websocket' in txt.lower()}")
+        import re as _re
+        _m=_re.search(r"(?i)x-real-ip:\s*([^\r\n]+)", txt)
+        _rip=_m.group(1).strip() if _m else "-"
+        log(f"{addr} realip={_rip} {txt.splitlines()[0] if txt else ''} len={len(data)} upgrade={'upgrade: websocket' in txt.lower()}")
         if "upgrade: websocket" not in txt.lower():
             log(f"{addr} no upgrade header -> close")
             conn.close(); return
@@ -15936,7 +15954,7 @@ chmod 644 "$ETC/config/dropbear_versions.txt"
 # installer, lalu nama script (mis. install-1.13.11.sh).
 # Sumber kebenaran #1: di-hardcode SAAT BUILD oleh .githooks/pre-commit dari file
 # VERSION. Sebelumnya manual -> sering terlewat saat bump (v1.13.34 vs VERSION v1.14.0).
-_mt_version="v2026.11.22c"
+_mt_version="v2026.11.23"
 [ -n "${MYTUNNEL_VERSION:-}" ] && _mt_version="$MYTUNNEL_VERSION"
 if [ -z "$_mt_version" ] && [ -n "${0:-}" ] && [ -f "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" ]; then
   _mt_version=$(head -1 "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/VERSION" 2>/dev/null | tr -d ' \r\n')
@@ -17651,8 +17669,8 @@ location /xvmess/ {
   proxy_pass http://127.0.0.1:10031;
   proxy_http_version 1.1;
   proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Real-IP $cf_ip;
+  proxy_set_header X-Forwarded-For $cf_ip;
   proxy_read_timeout 3600s;
   proxy_buffering off;
   proxy_send_timeout 3600s;
@@ -17663,8 +17681,8 @@ location /xvless/ {
   proxy_pass http://127.0.0.1:10032;
   proxy_http_version 1.1;
   proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Real-IP $cf_ip;
+  proxy_set_header X-Forwarded-For $cf_ip;
   proxy_read_timeout 3600s;
   proxy_buffering off;
   proxy_send_timeout 3600s;
@@ -17675,8 +17693,8 @@ location /xtrojan/ {
   proxy_pass http://127.0.0.1:10033;
   proxy_http_version 1.1;
   proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Real-IP $cf_ip;
+  proxy_set_header X-Forwarded-For $cf_ip;
   proxy_read_timeout 3600s;
   proxy_buffering off;
   proxy_send_timeout 3600s;
