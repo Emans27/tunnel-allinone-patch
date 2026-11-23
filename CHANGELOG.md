@@ -1,3 +1,9 @@
+## v2026.11.23c — notif SSH tampilkan jumlah PID
+
+`lr_ssh_block` sebelumnya hanya mendaftar nama user; kolom PID hasil
+`lr_ssh_rows` dihitung tapi tak ditampilkan. Baris kini `user | N PID`, dan
+`Total` = jumlah PID (bukan jumlah user). Live VPS: `suneke | 4 PID`.
+
 ## v2026.11.23b — cron/quota.sh: parser statsquery JSON
 
 Bug: `cron/quota.sh` (tiap 1 menit) mem-parse keluaran `xray api statsquery`
