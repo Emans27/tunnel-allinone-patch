@@ -1,3 +1,10 @@
+## v2026.11.23d — Total notif SSH = jumlah user aktif
+
+`Total` kembali menjadi jumlah user aktif (`Total : N user`), bukan jumlah PID.
+Kolom PID per user tetap tampil (`user | N PID`). Jadi satu baris per user aktif,
+PID menunjukkan berapa sesi dibuka user itu. Live VPS: `suneke | 3 PID`,
+`Total : 1 user`.
+
 ## v2026.11.23c — notif SSH tampilkan jumlah PID
 
 `lr_ssh_block` sebelumnya hanya mendaftar nama user; kolom PID hasil
