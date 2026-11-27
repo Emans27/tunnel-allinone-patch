@@ -6771,6 +6771,22 @@ location /xtrojan/ {
 }
 LOC_EOF
   chmod 644 "$LOC_INC" 2>/dev/null || true
+  # mytunnel realip: $cf_ip HARUS terdefinisi (dipakai mytunnel-locations.inc),
+  # bukan hanya di test-mode ($BASE). Bug produksi: blok map hanya ditulis di cabang
+  # [ -n "$BASE" ], jadi di VPS nyata nginx.conf distro tanpa $cf_ip -> nginx gagal start.
+  # Heredoc ber-quote: $ bebas tanpa escaping (anti regressi $ ter-expand kosong).
+  local REALIP_INC="$NGINX_CONF_DIR/conf.d/mytunnel-realip.conf"
+  cat > "$REALIP_INC" << 'REALIP_EOF'
+# IP klien asli via Cloudflare CF-Connecting-IP; fallback ke $remote_addr.
+# Dipisah ke conf.d agar termuat di nginx.conf distro maupun nginx.conf mytunnel.
+log_format realip '$remote_addr - $cf_ip [$time_local] "$request" $status $body_bytes_sent "$http_user_agent"';
+map $http_cf_connecting_ip $cf_ip {
+  default $http_cf_connecting_ip;
+  ""      $remote_addr;
+}
+access_log /var/log/nginx/access.log realip;
+REALIP_EOF
+  chmod 644 "$REALIP_INC" 2>/dev/null || true
   if [ -f "$NGINX_SITE" ]; then
     local bak
     bak="$NGINX_SITE.bak-$(date +%Y%m%d-%H%M%S)"
@@ -6783,12 +6799,8 @@ LOC_EOF
       cat > "$NGINX_MAIN" << 'MAIN_EOF'
 user www-data;
 worker_processes auto;
-# mytunnel realip: catat IP asli klien lewat Cloudflare ke log & ke upstream
-log_format realip '$remote_addr - $cf_ip [$time_local] "$request" $status $body_bytes_sent "$http_user_agent"';
-map $http_cf_connecting_ip $cf_ip {
-  default $http_cf_connecting_ip;
-  ""      $remote_addr;
-}
+# NOTE: map $cf_ip + log_format realip + access_log realip ada di conf.d/mytunnel-realip.conf
+# (satu sumber). Jangan tulis duplikat di sini - nginx menolak log_format/map dobel.
 pid /run/nginx.pid;
 include /etc/nginx/modules-enabled/*.conf;
 worker_rlimit_nofile 65535;
@@ -6797,7 +6809,8 @@ http {
   sendfile on;
   include /etc/nginx/mime.types;
   default_type application/octet-stream;
-  access_log /var/log/nginx/access.log realip;
+  # access_log realip dipasang di conf.d/mytunnel.conf SETELAH log_format realip
+  # didefinisikan di sana; mendahului include di sini -> unknown log format.
   error_log /var/log/nginx/error.log;
   include /etc/nginx/conf.d/*.conf;
 }
