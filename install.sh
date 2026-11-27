@@ -18132,6 +18132,40 @@ if ! MYTUNNEL_YES=1 bash "$ETC/setup/udp-custom.sh" install; then
   echo -e "${YELLOW}Setup UDP-Custom gagal, lanjut (cek $ETC/setup/udp-custom.sh dan $LOG)${RESET}" | tee -a "$LOG" 2>/dev/null || true
 fi
 
+# --- Auto-install komponen opsional (keputusan pemilik: SEMUA aktif otomatis) ---
+# Squid, OHP, OpenVPN sebelumnya hanya lewat menu FEATURES, jadi install segar
+# menyisakan mereka OFF. Kini ikut otomatis. Semua tahan gagal (install utama
+# tetap lanjut bila satu komponen gagal), tidak ada yang memanggil _fail.
+_auto_opt(){
+  local _name="$1"; shift
+  echo -e "${CYAN}Setup ${_name}...${RESET}"
+  _log "setup ${_name}"
+  if ! MYTUNNEL_YES=1 bash "$@" install; then
+    echo -e "${YELLOW}Setup ${_name} gagal, lanjut (cek $LOG)${RESET}" | tee -a "$LOG" 2>/dev/null || true
+  fi
+}
+_auto_opt "Squid (127.0.0.1:3128)"        "$ETC/setup/squid.sh"
+_auto_opt "OHP (9080->SSH, 9088->OVPN)"   "$ETC/setup/ohp.sh"
+_auto_opt "OpenVPN (1194/25000/442/53)"   "$ETC/setup/openvpn.sh"
+
+# SlowDNS butuh NS domain dari luar (tidak bisa ditebak). Otomatis HANYA bila
+# pemilik memberi MYTUNNEL_NS_DOMAIN; kalau tidak, lewati dengan pesan jelas
+# (install tetap sukses, SlowDNS bisa dipasang belakangan via menu Advanced).
+if [ -n "${MYTUNNEL_NS_DOMAIN:-}" ]; then
+  echo -e "${CYAN}Setup SlowDNS (NS ${MYTUNNEL_NS_DOMAIN})...${RESET}"
+  _log "setup slowdns"
+  # advanced/slowdns.sh tidak parse argumen: langsung tampilkan menu interaktif.
+  # Urutan input: 1 (Install) -> NS domain -> SSH port -> tipe record -> fallback.
+  if printf '1\n%s\n%s\n1\n\n' "$MYTUNNEL_NS_DOMAIN" "${MYTUNNEL_SSH_PORT:-22}" \
+       | MYTUNNEL_YES=1 bash "$ETC/advanced/slowdns.sh"; then
+    echo -e "  ${GREEN}✓ SlowDNS aktif${RESET}"
+  else
+    echo -e "${YELLOW}Setup SlowDNS gagal, lanjut (butuh NS A-record menunjuk IP ini). Cek $LOG${RESET}" | tee -a "$LOG" 2>/dev/null || true
+  fi
+else
+  echo -e "${DIM}SlowDNS dilewati: set MYTUNNEL_NS_DOMAIN=<ns.example.com> untuk pasang otomatis, atau via menu Advanced > SlowDNS${RESET}" | tee -a "$LOG" 2>/dev/null || true
+fi
+
 echo -e "${CYAN}[12/13] Setup Cron SSH (autoexpire + limitip)...${RESET}"
 _log "[12/13] cron ssh"
 # tulis /etc/cron.d/mytunnel (idempotent)
