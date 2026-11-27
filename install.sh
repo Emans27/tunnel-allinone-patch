@@ -8713,6 +8713,19 @@ _write_server_conf(){
   # "ssl"/"dns" hanya NAMA PROFIL, bukan protokol OpenVPN. Map ke protokol valid.
   local ovpn_proto="$proto"
   case "$proto" in ssl) ovpn_proto="tcp" ;; dns) ovpn_proto="udp" ;; esac
+  # Ubuntu/Debian 12: systemd-resolved menahan :53 di 127.0.0.53 (DNSStubListener).
+  # OpenVPN-DNS port 53 tak bisa bind -> "Address already in use" (errno=98), restart
+  # loop. Matikan stub SEBELUM menulis config. Idempoten + simpan backup utk uninstall.
+  if [ "$proto" = "dns" ] && [ -z "$BASE" ]; then
+    if [ -f /etc/systemd/resolved.conf ] && ! grep -qE "^\s*DNSStubListener\s*=\s*no" /etc/systemd/resolved.conf 2>/dev/null; then
+      local _rb="/etc/systemd/resolved.conf.bak-openvpndns-$(date +%Y%m%d-%H%M%S)"
+      cp -a /etc/systemd/resolved.conf "$_rb" 2>/dev/null || true
+      mkdir -p /etc/systemd/resolved.conf.d 2>/dev/null || true
+      printf "\n[Resolve]\nDNSStubListener=no\n" > /etc/systemd/resolved.conf.d/99-mytunnel-openvpndns.conf 2>/dev/null || true
+      systemctl restart systemd-resolved 2>/dev/null || true
+      echo -e "${YELLOW}DNSStubListener dimatikan utk OpenVPN-DNS :53 (backup $_rb)${RESET}"
+    fi
+  fi
   ovpn_dir=$(_ovpn_dir)
   domain=$(_get_domain)
   pam_plugin=$(_find_pam_plugin)
@@ -8766,6 +8779,13 @@ CFG_EOF
   if [ ! -f "$ovpn_dir/crl.pem" ]; then sed -i "s|^crl-verify|#crl-verify|" "$conf" 2>/dev/null || true; fi
   # if ta.key missing
   if [ ! -f "$ovpn_dir/ta.key" ]; then sed -i "/tls-auth/d" "$conf" 2>/dev/null || true; fi
+  # explicit-exit-notify HANYA valid utk proto udp. Opsi ini di-heredoc utk SEMUA
+  # proto, jadi di TCP/SSL openvpn error "Options error: --explicit-exit-notify
+  # can only be used with --proto udp" -> service restart loop. Pemetaan: $ovpn_proto
+  # = "udp" hanya utk proto udp & dns; tcp & ssl = tcp. Hapus di yang non-UDP.
+  if [ "$ovpn_proto" != "udp" ]; then
+    sed -i "/^explicit-exit-notify /d" "$conf" 2>/dev/null || true
+  fi
   chmod 644 "$conf" 2>/dev/null || true
   echo -e "${GREEN}Server conf: $conf (port $port proto $proto)${RESET}"
 }
