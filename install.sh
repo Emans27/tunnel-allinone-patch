@@ -15786,12 +15786,11 @@ render_login_dashboard(){
   c_trojan=$(get_account_count trojan 2>/dev/null || echo 0)
 
   # version info
-  local version client expiry orderby
+  local version client expiry
   version=$(cat "$ETC_BASE/config/version.txt" 2>/dev/null || cat /etc/mytunnel/config/version.txt 2>/dev/null || echo "v1.8.0")
   # Format versi: SPv07.01.26 -> kita pakai SUNEK-VPN prefix, tampil apa adanya
   client=$(get_ip_cached 2>/dev/null || echo "-")
   expiry=$(get_expiry 2>/dev/null || echo "-")
-  orderby=$(get_brand 2>/dev/null || echo "SUNEK VPN")
 
   # === RENDER — semua baris di dalam kotak 60 kolom ===
   # _box_* dari lib/helpers.sh; kalau lib tak ada, definisi lokal di bawah dipakai
@@ -15908,7 +15907,6 @@ render_login_dashboard(){
   # 6) versi
   _box_top
   printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "Version"     "$(_tr "$version")" "$BLUE"
-  printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "Order By"    "$(_tr "$orderby")" "$BLUE"
   printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "Client Name" "$(_tr "$client")"  "$BLUE"
   printf "%s│${RESET} ${CYAN}%-11s${RESET} : %-42s %s│${RESET}\n" "$BLUE" "Expiry In"   "$(_tr "$expiry")"  "$BLUE"
   _box_bottom
