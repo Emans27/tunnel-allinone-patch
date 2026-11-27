@@ -9622,8 +9622,19 @@ _free_port80(){
     [ -e "$f" ] || continue
     grep -qE '^[[:space:]]*listen[[:space:]]+(\[::\]:)?80([[:space:];])' "$f" 2>/dev/null || continue
     mkdir -p /root/backup 2>/dev/null || true
-    mv -f "$f" "/root/backup/nginx-default.pre-httpmux-$(date +%Y%m%d-%H%M%S)-$(basename "$f")" 2>/dev/null \
-      || rm -f "$f" 2>/dev/null || true
+    # Jika $f adalah symlink (mis. sites-enabled/default -> ../sites-available/default),
+    # jangan pindahkan symlink-nya (meninggalkan symlink mati di /root/backup yang
+    # merusak listing SFTP). Pindahkan FILE TARGET-nya, lalu hapus symlink-nya.
+    if [ -L "$f" ]; then
+      _tgt="$(readlink -f "$f" 2>/dev/null)"
+      if [ -n "$_tgt" ] && [ -f "$_tgt" ]; then
+        mv -f "$_tgt" "/root/backup/nginx-default.pre-httpmux-$(date +%Y%m%d-%H%M%S)-$(basename "$_tgt")" 2>/dev/null || true
+      fi
+      rm -f "$f" 2>/dev/null || true
+    else
+      mv -f "$f" "/root/backup/nginx-default.pre-httpmux-$(date +%Y%m%d-%H%M%S)-$(basename "$f")" 2>/dev/null \
+        || rm -f "$f" 2>/dev/null || true
+    fi
     echo -e "${YELLOW}httpmux: nginx site pemegang :80 dipindah ke /root/backup ($f)${RESET}"
     moved=1
   done
@@ -9713,8 +9724,19 @@ _free_port80(){
     [ -e "$f" ] || continue
     grep -qE '^[[:space:]]*listen[[:space:]]+(\[::\]:)?80([[:space:];])' "$f" 2>/dev/null || continue
     mkdir -p /root/backup 2>/dev/null || true
-    mv -f "$f" "/root/backup/nginx-default.pre-httpmux-$(date +%Y%m%d-%H%M%S)-$(basename "$f")" 2>/dev/null \
-      || rm -f "$f" 2>/dev/null || true
+    # Jika $f adalah symlink (mis. sites-enabled/default -> ../sites-available/default),
+    # jangan pindahkan symlink-nya (meninggalkan symlink mati di /root/backup yang
+    # merusak listing SFTP). Pindahkan FILE TARGET-nya, lalu hapus symlink-nya.
+    if [ -L "$f" ]; then
+      _tgt="$(readlink -f "$f" 2>/dev/null)"
+      if [ -n "$_tgt" ] && [ -f "$_tgt" ]; then
+        mv -f "$_tgt" "/root/backup/nginx-default.pre-httpmux-$(date +%Y%m%d-%H%M%S)-$(basename "$_tgt")" 2>/dev/null || true
+      fi
+      rm -f "$f" 2>/dev/null || true
+    else
+      mv -f "$f" "/root/backup/nginx-default.pre-httpmux-$(date +%Y%m%d-%H%M%S)-$(basename "$f")" 2>/dev/null \
+        || rm -f "$f" 2>/dev/null || true
+    fi
     echo -e "${YELLOW}httpmux: nginx site pemegang :80 dipindah ke /root/backup ($f)${RESET}"
     moved=1
   done
@@ -14305,6 +14327,11 @@ PYPY
 
 do_backup() {
   mkdir -p "$REAL_BACKUP_DIR" 2>/dev/null || true
+  # /root default 700 membuat folder backup tak terlihat oleh SFTP client
+  # (Termius dkk.) bila sesi tak chroot ke root. 755 di dir cukup aman: file
+  # spesifik di dalamnya tetap 644/600, data di /root lain tak terbaca.
+  [ -d /root/backup ] && chmod 755 /root 2>/dev/null || true
+  chmod 755 "$REAL_BACKUP_DIR" 2>/dev/null || true
   local ts arch
   ts=$(date +%Y%m%d-%H%M%S 2>/dev/null)
   echo -e "${DIM}Membuat backup...${RESET}"
@@ -14317,7 +14344,7 @@ do_backup() {
     tar -czf "$arch" -C "$TAR_ROOT" "${BACKUP_ITEMS[@]}" 2>/dev/null || true
   fi
   if [ -s "$arch" ]; then
-    chmod 600 "$arch" 2>/dev/null || true
+    chmod 644 "$arch" 2>/dev/null || true
     echo -e "${GREEN}Backup dibuat: $arch${RESET}"
     ls -lh "$arch" 2>&1 | sed 's/^/  /'
     fh_log "backup $arch"; ah_notify_admin "Backup berhasil dibuat: $(basename "$arch")"
