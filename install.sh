@@ -14267,18 +14267,36 @@ import os, sys, zipfile
 out = sys.argv[1]
 root = os.environ["MTK_ROOT"]
 n = 0
+seen_dirs = set()
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    def add_dir_entries(base):
+        """Tulis entri folder induk (ending '/') dulu. Tanpa ini sebagian tool
+        zip di Windows/Android menampilkan arsip 'kosong' walau isinya utuh,
+        karena zip ini tak punya directory entries."""
+        rel = os.path.relpath(base, root).replace("\\", "/")
+        if rel in ("..", ".", ""):
+            return
+        parts = rel.split("/")
+        for i in range(1, len(parts) + 1):
+            d = "/".join(parts[:i]) + "/"
+            if d not in seen_dirs:
+                seen_dirs.add(d)
+                zi = zipfile.ZipInfo(d, date_time=(2020, 1, 1, 0, 0, 0))
+                zi.external_attr = 0o40755 << 16 | 0x10  # drwxr-xr-x + MS-DOS dir bit
+                z.writestr(zi, "")
     for rel in os.environ["MTK_ITEMS"].split():
         p = os.path.normpath(os.path.join(root, rel))
         if not os.path.exists(p):
             continue
         if os.path.isdir(p):
             for base, _dirs, fs in os.walk(p):
+                add_dir_entries(base)
                 for f in fs:
                     fp = os.path.join(base, f)
                     z.write(fp, os.path.relpath(fp, root))
                     n += 1
         else:
+            add_dir_entries(os.path.dirname(p))
             z.write(p, os.path.relpath(p, root))
             n += 1
 sys.exit(0 if n else 1)
