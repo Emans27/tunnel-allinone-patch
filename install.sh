@@ -17343,7 +17343,7 @@ fi
 __EMBED_VERIFY_EOF__
 chmod 755 "$ETC/verify.sh"
 cat > "$ETC/config/expiry.txt" << '__EMBED_EOF__'
-NEVER
+SAMPE KIAMAT
 
 __EMBED_EOF__
 # izinkan override saat install: MYTUNNEL_EXPIRY=2099-12-31 bash install.sh
