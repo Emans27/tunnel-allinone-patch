@@ -14248,6 +14248,13 @@ _backup_items() {
   [ -f "$XRAY_CFG" ] && BACKUP_ITEMS+=("${XRAY_CFG#"$TAR_ROOT"}")
   [ -d "$TAR_ROOT/etc/openvpn" ] && BACKUP_ITEMS+=("etc/openvpn")
   [ -f "$TAR_ROOT/etc/nginx/conf.d/mytunnel.conf" ] && BACKUP_ITEMS+=("etc/nginx/conf.d/mytunnel.conf")
+  # locations.inc + realip.conf WAJIB: tanpa keduanya nginx rusak saat restore
+  # (tanpa realip.conf -> unknown "cf_ip"; tanpa locations.inc -> endpoint WS hilang).
+  # Glob [ -e ] supaya tak menambah entri kalau filenya memang tak ada.
+  for _inc in "$TAR_ROOT/etc/nginx/conf.d/mytunnel-locations.inc" \
+              "$TAR_ROOT/etc/nginx/conf.d/mytunnel-realip.conf"; do
+    [ -e "$_inc" ] && BACKUP_ITEMS+=("etc/nginx/conf.d/$(basename "$_inc")")
+  done
   [ -d "$TAR_ROOT/etc/mytunnel/cert" ] && BACKUP_ITEMS+=("etc/mytunnel/cert")
   [ ${#BACKUP_ITEMS[@]} -eq 0 ] && BACKUP_ITEMS+=("etc/mytunnel")
 }
