@@ -9262,6 +9262,13 @@ cat > "$ETC/logrotate.d/mytunnel" << '__EMBED_EOF__'
         systemctl restart xray 2>/dev/null || true
     endscript
 }
+__EMBED_EOF__
+# Blok log nginx TIDAK selalu ditulis: Debian/Ubuntu sudah membawa file
+# /etc/logrotate.d/nginx untuk path yang sama. Menulis dobel bikin logrotate
+# error "duplicate log entry" dan SELURUH file config di-skip. Tulis hanya
+# bila distro tak menyediakannya.
+if [ ! -f "${BASE}/etc/logrotate.d/nginx" ]; then
+  cat >> "$ETC/logrotate.d/mytunnel" << '__EMBED_EOF__'
 /var/log/nginx/access.log /var/log/nginx/error.log {
     daily
     rotate 14
@@ -9274,8 +9281,8 @@ cat > "$ETC/logrotate.d/mytunnel" << '__EMBED_EOF__'
         nginx -s reopen 2>/dev/null || systemctl reload nginx 2>/dev/null || true
     endscript
 }
-
 __EMBED_EOF__
+fi
 chmod 644 "$ETC/logrotate.d/mytunnel"
 cat > "$ETC/setup/sshws.sh" << '__EMBED_EOF__'
 #!/bin/bash
