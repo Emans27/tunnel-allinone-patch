@@ -2492,7 +2492,7 @@ show_version() {
   local version client expiry
   version=$(cat "$BASE/config/version.txt" 2>/dev/null || cat /etc/mytunnel/config/version.txt 2>/dev/null || echo "v1.8.0")
   version="SUNEK-VPN $version"
-  client=$(get_ip_cached 2>/dev/null || echo "-")
+  client="SUNEK"
   expiry=$(get_expiry 2>/dev/null || echo "-")
   _box_top
   _box_row "Version"     "$version"
@@ -15789,7 +15789,8 @@ render_login_dashboard(){
   local version client expiry
   version=$(cat "$ETC_BASE/config/version.txt" 2>/dev/null || cat /etc/mytunnel/config/version.txt 2>/dev/null || echo "v1.8.0")
   # Format versi: SPv07.01.26 -> kita pakai SUNEK-VPN prefix, tampil apa adanya
-  client=$(get_ip_cached 2>/dev/null || echo "-")
+  # Client Name: label brand, bukan IP VPS
+  client="SUNEK"
   expiry=$(get_expiry 2>/dev/null || echo "-")
 
   # === RENDER — semua baris di dalam kotak 60 kolom ===
