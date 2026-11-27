@@ -5584,10 +5584,22 @@ JAIL
   local flt="/etc/fail2ban/filter.d/mytunnel-dropbear.conf"
   cat > "$flt" <<'FLT'
 # mytunnel - filter Dropbear (format lognya beda dari OpenSSH)
+# Dropbear 2019 melog kegagalan utama sbg "Exit before auth" TANPA IP, sedangkan
+# IP hanya muncul di baris "Child connection from <IP>:<port>" (PID sama).
+# %(__prefix_line) TIDAK dipakai (tak selalu terdefinisi di fail2ban Debian 12),
+# jadi regex ditulis tanpa prefregex dan tiap pola menangkap HOST sendiri.
+# "Child connection from <HOST>" adalah anchor IP: setiap koneksi mencatatnya,
+# sehingga brute force (banyak koneksi gagal dari 1 IP) tetap terhitung.
 [Definition]
-failregex = ^.*dropbear\[\d+\]: Bad password attempt for .* from <HOST>:\d+$
-            ^.*dropbear\[\d+\]: Login attempt for nonexistent user from <HOST>:\d+$
-ignoreregex =
+_daemon = dropbear
+# Setiap failregex WAJIB mengandung <HOST> (fail2ban pakai utk failure-id).
+# "Exit before auth" sendiri tanpa IP -> dideteksi lewat "Child connection from"
+# yang selalu tercatat dengan IP untuk setiap koneksi gagal (termasuk root -w).
+failregex = ^.*dropbear\[\d+\]: Child connection from <HOST>:\d+$
+            ^.*dropbear\[\d+\]: Bad password attempt for .+ from <HOST>:\d+$
+            ^.*dropbear\[\d+\]: Login attempt for nonexistent user ('.+?' )?from <HOST>:\d+$
+ignoreregex = ^.*Child connection from 127\.0\.0\.1.*$
+              ^.*Child connection from ::1.*$
 FLT
   chmod 644 "$flt" 2>/dev/null || true
   systemctl enable fail2ban >/dev/null 2>&1 || true
@@ -7237,7 +7249,7 @@ After=network.target
 [Service]
 Type=forking
 PIDFile=/run/dropbear.pid
-ExecStart=/usr/sbin/dropbear -p $dport -b /etc/dropbear/banner -P /run/dropbear.pid -K 10
+ExecStart=/usr/sbin/dropbear -p $dport -b /etc/dropbear/banner -P /run/dropbear.pid -K 10 -w
 ExecReload=/bin/kill -HUP \$MAINPID
 [Install]
 WantedBy=multi-user.target
@@ -7245,11 +7257,14 @@ UNIT_EOF
     chmod 644 /etc/systemd/system/dropbear.service
     # Drop-in: jaga -K 10 tahan update paket / edit manual (idempoten).
     # Sesi terhubung TIDAK boleh diputus; -K 10 kirim keepalive SSH tiap 10s (anti NAT-idle).
+    # -w = tolak login root lewat Dropbear. Port Dropbear terbuka publik utk akun
+    # tunnel (shell /bin/false), jadi root tak boleh lewat sini; root tetap via
+    # OpenSSH :22 yang dilindungi fail2ban jail sshd.
     mkdir -p /etc/systemd/system/dropbear.service.d
     cat > /etc/systemd/system/dropbear.service.d/keepalive.conf <<DROPIN_EOF
 [Service]
 ExecStart=
-ExecStart=/usr/sbin/dropbear -p $dport -b /etc/dropbear/banner -P /run/dropbear.pid -K 10
+ExecStart=/usr/sbin/dropbear -p $dport -b /etc/dropbear/banner -P /run/dropbear.pid -K 10 -w
 DROPIN_EOF
     chmod 644 /etc/systemd/system/dropbear.service.d/keepalive.conf
     # Anti-disconnect OS-level: NAT memutus idle 60-120s -> keepalive 60s + intvl 10s.
